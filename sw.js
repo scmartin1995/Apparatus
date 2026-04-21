@@ -2,7 +2,7 @@
 // NOTE: Update REPO_PATH to match your GitHub Pages repo name
 // e.g. if deployed at github.com/user/MyApp → '/MyApp'
 const REPO_PATH  = '/YOUR-REPO-NAME';
-const CACHE_NAME = 'apparatus-v1';
+const CACHE_NAME = 'apparatus-v2';
 
 const SHELL = [
   REPO_PATH + '/',
