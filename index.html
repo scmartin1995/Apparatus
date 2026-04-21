@@ -636,10 +636,7 @@ body.session-active .bottomnav { display: none; }
 'use strict';
 try {
 
-// ── BASE PATH ──────────────────────────────────────────────
-// UPDATE THIS to match your GitHub Pages repo path
-// e.g. if your repo is github.com/user/MyApp → '/MyApp'
-const BASE_PATH = '/YOUR-REPO-NAME';
+// No path config needed — SW registered relative to this file
 
 // ── STORAGE KEYS ───────────────────────────────────────────
 const LS_PROGRAM   = 'apparatus_program';
@@ -1732,11 +1729,9 @@ setActiveNav();
   document.getElementById('draftModal').classList.add('open');
 })();
 
-// Service worker registration
-// NOTE: Update BASE_PATH above to match your repo name, then this registers automatically
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(BASE_PATH + '/sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
 }
 
