@@ -313,6 +313,10 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .log-input:focus { border-color: var(--c-primary-ctr); }
 .log-input.filled { border-color: rgba(0,227,253,0.4); color: var(--c-secondary); }
 .log-input-x { font-family: var(--font-h); font-weight: 600; font-size: 0.75rem; color: var(--c-on-surface-v); flex-shrink: 0; }
+.weight-hint { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.weight-hint-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: rgba(202,253,0,0.08); border: 1px solid rgba(202,253,0,0.2); color: var(--c-primary-ctr); padding: 3px 8px; border-radius: 4px; }
+.weight-hint-label { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
+.weight-hint-source { font-family: var(--font-b); font-size: 0.5625rem; color: var(--c-on-surface-v); opacity: 0.5; }
 .log-ar7 { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .log-ar7-label { font-family: var(--font-h); font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); }
 .log-ar7-dots { display: flex; gap: 6px; flex: 1; min-width: 140px; }
@@ -1123,6 +1127,7 @@ function renderSessionMode(day) {
       const header = '<div class="log-item-header"><div class="log-item-name">' + item.name + '</div></div>' + targetHtml;
       if (cat === 'primary') {
         const p = session.primaries[key]; if (!p) return;
+        const hintHtml = weightHintHtml(item.name, item.sets);
         let setsHtml = '';
         p.sets.forEach((set, idx) => {
           setsHtml += '<div class="log-set-row"><span class="log-set-num">S' + (idx+1) + '</span>' +
@@ -1131,7 +1136,7 @@ function renderSessionMode(day) {
             '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updatePrimarySet(\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
             '</div>';
         });
-        itemsHtml += '<div class="log-item">' + header + noteHtml + '<div class="log-sets">' + setsHtml + '</div></div>';
+        itemsHtml += '<div class="log-item">' + header + noteHtml + hintHtml + '<div class="log-sets">' + setsHtml + '</div></div>';
       } else if (cat === 'ar7') {
         const a = session.ar7[key]; if (!a) return;
         let dotsHtml = '';
@@ -1141,6 +1146,8 @@ function renderSessionMode(day) {
         itemsHtml += '<div class="log-item">' + header + noteHtml + weightHtml + ar7Html + '</div>';
       } else {
         const acc = session.accessories[key]; if (!acc) return;
+        const accHint = getSuggestedWeight(item.name, item.sets);
+        const accHintHtml = accHint ? '<div class="weight-hint"><span class="weight-hint-badge">~' + accHint.weight + ' lb</span><span class="weight-hint-label">suggested</span><span class="weight-hint-source">' + (accHint.source==='baseline'?'from 1RM':'last session') + '</span></div>' : '';
         let setsHtml = '';
         acc.sets.forEach((set, idx) => {
           setsHtml += '<div class="log-set-row"><span class="log-set-num">S' + (idx+1) + '</span>' +
@@ -1152,7 +1159,7 @@ function renderSessionMode(day) {
         let rpeDots = '';
         for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" onclick="setAccessoryRpe(\'' + key + '\',' + r + ')">' + r + '</button>';
         const rpeHtml = '<div class="log-rpe"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div>';
-        itemsHtml += '<div class="log-item">' + header + noteHtml + '<div class="log-sets">' + setsHtml + '</div>' + rpeHtml + '</div>';
+        itemsHtml += '<div class="log-item">' + header + noteHtml + accHintHtml + '<div class="log-sets">' + setsHtml + '</div>' + rpeHtml + '</div>';
       }
     });
     bodyHtml += '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '>' +
@@ -1583,6 +1590,61 @@ function closeProgPage() { document.getElementById('progPage').classList.remove(
 
 // ── CALCULATOR ─────────────────────────────────────────────
 function calcOrm(w, r) { return r === 1 ? w : Math.round(w*(1+r/30)/2.5)*2.5; }
+
+// ── WEIGHT SUGGESTION ENGINE ───────────────────────────────
+// Maps mid-point rep count → NSCA load percentage
+function repToPercent(reps) {
+  if (reps <= 1)  return 1.00;
+  if (reps <= 2)  return 0.95;
+  if (reps <= 3)  return 0.93;
+  if (reps <= 4)  return 0.90;
+  if (reps <= 5)  return 0.87;
+  if (reps <= 6)  return 0.85;
+  if (reps <= 8)  return 0.80;
+  if (reps <= 10) return 0.75;
+  if (reps <= 12) return 0.70;
+  if (reps <= 15) return 0.65;
+  return 0.60;
+}
+// Returns { weight: number, source: 'baseline'|'history' } or null
+function getSuggestedWeight(exerciseName, setsStr) {
+  const nameSlug = slugify(exerciseName);
+  // 1. Try baseline match by slugified name
+  const baselines = loadBaselines();
+  const b = baselines.find(x => slugify(x.lift) === nameSlug || x.id === nameSlug);
+  if (b && b.orm > 0) {
+    const parsed = parseSetsStr(setsStr);
+    const midRep = Math.round((parsed.repLow + parsed.repHigh) / 2);
+    const pct = repToPercent(midRep);
+    const suggested = Math.round(b.orm * pct / 2.5) * 2.5;
+    return { weight: suggested, source: 'baseline' };
+  }
+  // 2. Fall back to last logged weight from session history
+  const all = getAllSessions();
+  for (let i = all.length - 1; i >= 0; i--) {
+    const s = all[i];
+    const allItems = Object.assign({}, s.primaries, s.accessories);
+    for (const k in allItems) {
+      const item = allItems[k];
+      if (slugify(item.name || '') === nameSlug && item.sets) {
+        const lastWeight = item.sets
+          .map(st => parseFloat(st.weight))
+          .filter(w => w > 0);
+        if (lastWeight.length) {
+          const avg = Math.round(lastWeight.reduce((a,b)=>a+b,0)/lastWeight.length/2.5)*2.5;
+          return { weight: avg, source: 'history' };
+        }
+      }
+    }
+  }
+  return null;
+}
+function weightHintHtml(exerciseName, setsStr) {
+  const s = getSuggestedWeight(exerciseName, setsStr);
+  if (!s) return '';
+  const sourceLabel = s.source === 'baseline' ? 'from 1RM' : 'last session';
+  return '<div class="weight-hint"><span class="weight-hint-badge">~' + s.weight + ' lb</span><span class="weight-hint-label">suggested</span><span class="weight-hint-source">' + sourceLabel + '</span></div>';
+}
 function workingRange(orm, lo, hi) { const a=Math.round(orm*lo/2.5)*2.5, b=Math.round(orm*hi/2.5)*2.5; return a===b ? a+' lb' : a+'\u2013'+b+' lb'; }
 function fmtTime(s) { const m=Math.floor(s/60),sec=s%60; return m+':'+(sec<10?'0':'')+sec; }
 function calculate() {
