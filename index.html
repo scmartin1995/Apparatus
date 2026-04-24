@@ -415,6 +415,17 @@ body.session-active .bottomnav { display: none; }
 .mb-1 { margin-bottom: 0.25rem; }
 .mb-2 { margin-bottom: 0.5rem; }
 .flex-row-between { display: flex; align-items: center; gap: 12px; }
+
+/* ── SESSION EDIT LOG ─────────────────────────────────────── */
+.edit-log-toggle { width:100%; margin-top:20px; background:var(--c-surface-low); border:1px solid rgba(72,72,71,0.25); color:var(--c-on-surface-v); font-family:var(--font-h); font-weight:700; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.2em; padding:12px; border-radius:10px; display:flex; align-items:center; justify-content:center; gap:8px; transition:border-color 0.2s,color 0.2s; }
+.edit-log-toggle:hover { border-color:var(--c-outline); color:#fff; }
+.edit-log-section { margin-top:12px; display:flex; flex-direction:column; gap:10px; }
+.edit-log-group { background:var(--c-surface-ctr); border-radius:12px; padding:12px 16px 14px; }
+.edit-log-group-hdr { display:flex; align-items:baseline; gap:8px; margin-bottom:10px; }
+.edit-log-group-type { font-family:var(--font-b); font-size:0.5625rem; text-transform:uppercase; letter-spacing:0.2em; color:var(--c-on-surface-v); background:var(--c-surface-high); padding:2px 8px; border-radius:4px; flex-shrink:0; }
+.edit-log-group-name { font-family:var(--font-h); font-weight:700; font-size:0.8125rem; color:var(--c-on-surface); line-height:1.3; }
+.session-row { cursor:pointer; border-radius:6px; margin:0 -6px; padding:6px 6px; transition:background 0.15s; }
+.session-row:hover { background:var(--c-surface-ctr); }
 </style>
 </head>
 <body>
@@ -1175,7 +1186,7 @@ function renderSessionMode(day) {
 
 // ── RENDER: SUMMARY ────────────────────────────────────────
 function showSummary(record) { renderSummary(record); document.getElementById('summaryPage').classList.add('open'); }
-function closeSummary() { document.getElementById('summaryPage').classList.remove('open'); }
+function closeSummary() { document.getElementById('summaryPage').classList.remove('open'); summaryEditOpen = false; }
 function renderSummary(record) {
   const day = DAYS.find(d => d.id === record.dayType) || { label: record.dayType.toUpperCase(), day: '', accent: '#cafd00' };
   const sc = record.score;
@@ -1201,7 +1212,11 @@ function renderSummary(record) {
     '<div class="comp-row"><div class="comp-label">Primary</div><div class="comp-bar-wrap"><div class="comp-bar primary" style="width:' + sc.primaryPct + '%"></div></div><div class="comp-val">' + sc.primary + '/' + sc.primaryMax + '</div></div>' +
     '<div class="comp-row"><div class="comp-label">Hypertrophy</div><div class="comp-bar-wrap"><div class="comp-bar hyper" style="width:' + sc.hyperPct + '%"></div></div><div class="comp-val">' + sc.hyper + '/' + sc.hyperMax + '</div></div>' +
     '<div class="comp-row"><div class="comp-label">Feel</div><div class="comp-bar-wrap"><div class="comp-bar feel" style="width:' + sc.feelPct + '%"></div></div><div class="comp-val">' + sc.feel + '/' + sc.feelMax + '</div></div>' +
-    '</div>' + feelHtml;
+    '</div>' +
+    '<button id="editLogToggle" class="edit-log-toggle" onclick="toggleEditLog(\'' + record.id + '\')">' +
+    '<span class="mi mi-sm" style="font-variation-settings:FILL 0,wght 400,GRAD 0,opsz 24">edit</span>Edit Log</button>' +
+    '<div id="editLogSection" class="edit-log-section" style="display:none">' + renderEditLog(record) + '</div>' +
+    feelHtml;
 }
 function renderFeelSurvey(record) {
   const f = (window._feelDraft && window._feelDraft.recordId === record.id)
@@ -1241,6 +1256,137 @@ window.saveFeelDraft = function(recordId) {
   all[idx].score = computeScore(all[idx]);
   saveAllSessions(all); window._feelDraft = null; renderSummary(all[idx]);
 };
+// ── SESSION EDITING ────────────────────────────────────────
+let summaryEditOpen = false;
+
+window.toggleEditLog = function(recordId) {
+  summaryEditOpen = !summaryEditOpen;
+  const section = document.getElementById('editLogSection');
+  const btn = document.getElementById('editLogToggle');
+  if (!section || !btn) return;
+  if (summaryEditOpen) {
+    section.style.display = 'flex';
+    btn.innerHTML = '<span class="mi mi-sm" style="font-variation-settings:FILL 0,wght 400,GRAD 0,opsz 24">close</span>Close Edit';
+  } else {
+    section.style.display = 'none';
+    btn.innerHTML = '<span class="mi mi-sm" style="font-variation-settings:FILL 0,wght 400,GRAD 0,opsz 24">edit</span>Edit Log';
+  }
+};
+
+function renderEditLog(record) {
+  let groups = '';
+  Object.keys(record.primaries || {}).forEach(function(key) {
+    const p = record.primaries[key];
+    let setsHtml = p.sets.map(function(set, idx) {
+      return '<div class="log-set-row">' +
+        '<span class="log-set-num">S' + (idx+1) + '</span>' +
+        '<input class="log-input ' + (set.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="lb" value="' + (set.weight||'') + '" oninput="updateSessionPrimary(\'' + record.id + '\',\'' + key + '\',' + idx + ',\'weight\',this.value)"/>' +
+        '<span class="log-input-x">\xD7</span>' +
+        '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updateSessionPrimary(\'' + record.id + '\',\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
+        '</div>';
+    }).join('');
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Primary</span><span class="edit-log-group-name">' + p.name + '</span></div><div class="log-sets">' + setsHtml + '</div></div>';
+  });
+  Object.keys(record.ar7 || {}).forEach(function(key) {
+    const a = record.ar7[key];
+    let dotsHtml = '';
+    for (let r = 0; r < 7; r++) dotsHtml += '<button class="log-ar7-dot ' + (r < a.rounds ? 'done' : '') + '" onclick="updateSessionAr7Rounds(\'' + record.id + '\',\'' + key + '\',' + r + ')"></button>';
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">AR-7</span><span class="edit-log-group-name">' + a.name + '</span></div>' +
+      '<div class="log-sets"><div class="log-set-row"><span class="log-set-num">LOAD</span><input class="log-input ' + (a.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="lb" value="' + (a.weight||'') + '" oninput="updateSessionAr7Weight(\'' + record.id + '\',\'' + key + '\',this.value)" style="flex:0 0 90px"/><span class="log-input-x" style="font-size:0.625rem">lb</span></div></div>' +
+      '<div class="log-ar7" style="margin-top:10px"><span class="log-ar7-label">Rounds</span><div class="log-ar7-dots">' + dotsHtml + '</div><span class="log-ar7-count">' + a.rounds + '/7</span></div></div>';
+  });
+  Object.keys(record.accessories || {}).forEach(function(key) {
+    const acc = record.accessories[key];
+    let setsHtml = acc.sets.map(function(set, idx) {
+      return '<div class="log-set-row">' +
+        '<span class="log-set-num">S' + (idx+1) + '</span>' +
+        '<input class="log-input ' + (set.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="lb" value="' + (set.weight||'') + '" oninput="updateSessionAccessory(\'' + record.id + '\',\'' + key + '\',' + idx + ',\'weight\',this.value)"/>' +
+        '<span class="log-input-x">\xD7</span>' +
+        '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updateSessionAccessory(\'' + record.id + '\',\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
+        '</div>';
+    }).join('');
+    let rpeDots = '';
+    for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" onclick="updateSessionRpe(\'' + record.id + '\',\'' + key + '\',' + r + ')">' + r + '</button>';
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Accessory</span><span class="edit-log-group-name">' + acc.name + '</span></div><div class="log-sets">' + setsHtml + '</div><div class="log-rpe" style="margin-top:10px"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div></div>';
+  });
+  return groups || '<p style="font-size:0.75rem;color:var(--c-on-surface-v);padding:8px 0">No logged data to edit.</p>';
+}
+
+function refreshEditLog(rec) {
+  const section = document.getElementById('editLogSection');
+  if (section && summaryEditOpen) section.innerHTML = renderEditLog(rec);
+}
+
+function updateSummaryScoreDisplay(rec) {
+  const sc = rec.score;
+  const circ = 2 * Math.PI * 92, offset = circ * (1 - sc.total / 100);
+  const ringFg = document.querySelector('.score-ring-fg');
+  const ringVal = document.querySelector('.score-ring-value');
+  const ringGrade = document.querySelector('.score-ring-grade');
+  if (ringFg) { ringFg.setAttribute('stroke-dasharray', circ.toFixed(2)); ringFg.setAttribute('stroke-dashoffset', offset.toFixed(2)); }
+  if (ringVal) ringVal.textContent = sc.total;
+  if (ringGrade) ringGrade.textContent = gradeLabel(sc.total);
+  const bars = document.querySelectorAll('.comp-bar');
+  const vals = document.querySelectorAll('.comp-val');
+  if (bars[0]) bars[0].style.width = sc.primaryPct + '%';
+  if (bars[1]) bars[1].style.width = sc.hyperPct + '%';
+  if (bars[2]) bars[2].style.width = sc.feelPct + '%';
+  if (vals[0]) vals[0].textContent = sc.primary + '/' + sc.primaryMax;
+  if (vals[1]) vals[1].textContent = sc.hyper + '/' + sc.hyperMax;
+  if (vals[2]) vals[2].textContent = sc.feel + '/' + sc.feelMax;
+  const diag = document.querySelector('.summary-diagnostic');
+  if (diag) diag.innerHTML = diagnosticLine(rec, sc);
+}
+
+window.updateSessionPrimary = function(recordId, key, idx, field, val) {
+  const all = getAllSessions(), rec = all.find(function(s){ return s.id === recordId; });
+  if (!rec || !rec.primaries[key]) return;
+  rec.primaries[key].sets[idx][field] = val;
+  rec.score = computeScore(rec);
+  saveAllSessions(all);
+  updateSummaryScoreDisplay(rec);
+};
+window.updateSessionAr7Weight = function(recordId, key, val) {
+  const all = getAllSessions(), rec = all.find(function(s){ return s.id === recordId; });
+  if (!rec || !rec.ar7[key]) return;
+  rec.ar7[key].weight = val;
+  saveAllSessions(all);
+};
+window.updateSessionAr7Rounds = function(recordId, key, roundIdx) {
+  const all = getAllSessions(), rec = all.find(function(s){ return s.id === recordId; });
+  if (!rec || !rec.ar7[key]) return;
+  const a = rec.ar7[key];
+  a.rounds = (roundIdx + 1 === a.rounds) ? roundIdx : roundIdx + 1;
+  rec.score = computeScore(rec);
+  saveAllSessions(all);
+  updateSummaryScoreDisplay(rec);
+  refreshEditLog(rec);
+};
+window.updateSessionAccessory = function(recordId, key, idx, field, val) {
+  const all = getAllSessions(), rec = all.find(function(s){ return s.id === recordId; });
+  if (!rec || !rec.accessories[key]) return;
+  rec.accessories[key].sets[idx][field] = val;
+  rec.score = computeScore(rec);
+  saveAllSessions(all);
+  updateSummaryScoreDisplay(rec);
+};
+window.updateSessionRpe = function(recordId, key, val) {
+  const all = getAllSessions(), rec = all.find(function(s){ return s.id === recordId; });
+  if (!rec || !rec.accessories[key]) return;
+  rec.accessories[key].rpe = val;
+  rec.score = computeScore(rec);
+  saveAllSessions(all);
+  updateSummaryScoreDisplay(rec);
+  refreshEditLog(rec);
+};
+window.openSessionSummary = function(id) {
+  const rec = getAllSessions().find(function(s){ return s.id === id; });
+  if (!rec) return;
+  summaryEditOpen = false;
+  showSummary(rec);
+};
+
+
 
 // ── RENDER: HISTORY ────────────────────────────────────────
 function showHistoryPage() {
@@ -1282,7 +1428,7 @@ function renderHistoryPage() {
     arr.slice().reverse().slice(0,5).forEach((s, i) => {
       const d = new Date(s.date), dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       const isToday = new Date().toDateString() === d.toDateString();
-      rows += '<div class="session-row"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span><span class="session-row-score" style="' + (isWarn&&i===0?'color:#ffb84d':'') + '">' + s.score.total + '</span></div>';
+      rows += '<div class="session-row" onclick="openSessionSummary(\'' + s.id + '\')"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span><span class="session-row-score" style="' + (isWarn&&i===0?'color:#ffb84d':'') + '">' + s.score.total + '</span></div>';
     });
     html += '<div class="day-card ' + (isWarn?'warn':'') + '"><div class="day-card-header"><div class="day-card-day" style="color:' + day.accent + '">' + day.label + (day.day?' \xB7 ' + day.day:'') + '</div><div class="day-card-avg">Avg <strong>' + avg + '</strong> \xB7 ' + arr.length + ' session' + (arr.length===1?'':'s') + '</div></div><div class="sparkline-wrap">' + spark + '</div><div class="day-card-sessions">' + rows + '</div></div>';
   });
