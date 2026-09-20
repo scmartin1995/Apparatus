@@ -246,6 +246,13 @@ details[open] .section-caret { transform: rotate(180deg); }
 .prog-day-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 
 /* ── IMPORT PAGE ──────────────────────────────────────────── */
+.builtin-row { width: 100%; display: flex; align-items: center; gap: 0.875rem; text-align: left; background: var(--c-surface-ctr); border: 1px solid rgba(72,72,71,0.2); border-radius: 0.875rem; padding: 1rem; margin-bottom: 0.625rem; transition: border-color 0.2s; }
+.builtin-row.on { border-color: var(--c-secondary); }
+.builtin-mark { color: var(--c-on-surface-v); font-size: 20px; flex-shrink: 0; }
+.builtin-row.on .builtin-mark { color: var(--c-secondary); }
+.builtin-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.builtin-name { font-family: var(--font-h); font-weight: 700; font-size: 0.9375rem; color: var(--c-on-surface); }
+.builtin-meta { font-family: var(--font-b); font-size: 0.75rem; color: var(--c-on-surface-v); }
 .import-section-title { font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); margin-bottom: 1rem; margin-top: 2rem; }
 .upload-zone { background: var(--c-surface-ctr); border: 2px dashed rgba(72,72,71,0.4); border-radius: 1rem; padding: 2.5rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
 .upload-zone:hover, .upload-zone.drag-over { border-color: var(--c-primary-ctr); background: rgba(202,253,0,0.04); }
@@ -660,458 +667,1024 @@ const LS_BASELINES = 'apparatus_baselines';
 const LS_SESSIONS  = 'apparatus_sessions';
 const LS_DRAFT     = 'apparatus_draft';
 const LS_NUDGE     = 'apparatus_nudge_';
+const LS_BUILTIN   = 'apparatus_builtin';
 const SESSION_CAP  = 32;
 
-// ── LOCKED PROGRAM ─────────────────────────────────────────
-// Built-in program, bundled with the app so it survives a cleared browser,
-// a new device, or a lost CSV. An imported CSV overrides it; clearing that
-// import falls back here. Mirrored at programs/ar7-hybrid.json.
-const LOCKED_PROGRAM = {
-  "id": "prog-field-guide-ppl",
-  "name": "Field Guide PPL",
-  "importedAt": "2026-09-20T00:00:00.000Z",
-  "locked": true,
-  "days": [
-    {
-      "id": "off",
-      "label": "OFF DAYS",
-      "day": "Sun–Wed",
-      "sub": "Recovery · Mobility",
-      "accent": "#9B8EE8",
-      "duration": "Optional",
-      "notes": "",
-      "isOff": true,
-      "sections": []
-    },
-    {
-      "id": "pull",
-      "label": "PULL",
-      "day": "Thursday",
-      "sub": "Back · Rear Delts · Biceps",
-      "accent": "#00e3fd",
-      "duration": "~70 min",
-      "notes": "Deadlift leads the week on the freshest day — it carries the most collateral of anything here and shouldn't run on accumulated fatigue. Everything after it is chest-supported or cable-based so the spine stops paying for back work.",
-      "isOff": false,
-      "sections": [
-        {
-          "title": "Warm-Up",
-          "icon": "auto_awesome",
-          "type": "warmup",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Dead Hang",
-              "sets": "2 × 20–30 sec",
-              "note": "Sagittal · Lat in full stretch · Decompress the spine before loading the hinge",
-              "restSeconds": null
-            },
-            {
-              "name": "Prone Y Raise",
-              "sets": "2 × 10",
-              "note": "Frontal · Lower trap and scapular upward rotation · Bodyweight only",
-              "restSeconds": null
-            },
-            {
-              "name": "Prone T Raise",
-              "sets": "2 × 10",
-              "note": "Transverse · Rear delt and external rotators · Warm-up runs the plane hierarchy simple → complex, then ramp sets into Deadlift",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Primary Strength",
-          "icon": "fitness_center",
-          "type": "primary",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Conventional Deadlift",
-              "sets": "3 × 3–5",
-              "note": "3 min rest · Full recovery between sets · Highest collateral cost in the program, which is why it gets the freshest day",
-              "restSeconds": null,
-              "baselineId": "deadlift"
-            },
-            {
-              "name": "Weighted Pull-Up or Lat Pulldown",
-              "sets": "3 × 5–6",
-              "note": "2 min rest · Vertical pull · Load the pattern here, isolate the lat later",
-              "restSeconds": null
-            },
-            {
-              "name": "Chest-Supported DB or Machine Row",
-              "sets": "3 × 6–8",
-              "note": "2 min rest · Chest support strips the spinal shear out after deadlift — same row stimulus, far less collateral",
-              "restSeconds": null,
-              "baselineId": "csrow"
-            }
-          ]
-        },
-        {
-          "title": "Lat — Lengthened",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Single-Arm Cable Pulldown",
-              "sets": "3 × 10–12 / side",
-              "note": "60 sec rest · Gets to the lat in isolation faster than a bilateral pulldown · Cable holds tension at full overhead stretch, where a free weight goes light",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Rear Delts",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Reverse Pec Deck",
-              "sets": "3 × 12–15",
-              "note": "60 sec rest · Cam holds tension through the arc · A DB reverse fly is heaviest at the top, exactly where the rear delt is shortest and weakest",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Biceps — Lengthened",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Incline DB Curl",
-              "sets": "3 × 10–12",
-              "note": "60 sec rest · Shoulder extended puts the long head in its lengthened position · 3 sec eccentric, no body English",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Rotation — Golf",
-          "icon": "sports_golf",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Landmine Rotation",
-              "sets": "3 × 8–10 / side",
-              "note": "60 sec rest · Transverse plane · Hip-to-shoulder sequence, driven from the ground · Velocity is the point — add load only every 3–4 weeks",
-              "restSeconds": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "push",
-      "label": "PUSH",
-      "day": "Friday",
-      "sub": "Chest · Shoulders · Triceps",
-      "accent": "#cafd00",
-      "duration": "~75 min",
-      "notes": "Three pressing angles, then position work. The cable and cam picks aren't preference — a dumbbell is heaviest where the delt and pec are already shortened, which caps how much you can actually load them there.",
-      "isOff": false,
-      "sections": [
-        {
-          "title": "Warm-Up",
-          "icon": "auto_awesome",
-          "type": "warmup",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Band Pull-Aparts",
-              "sets": "2 × 15",
-              "note": "Frontal · Scapular retraction · Rear delt counterbalance before pressing",
-              "restSeconds": null
-            },
-            {
-              "name": "DB External Rotation (side-lying)",
-              "sets": "2 × 10 / side",
-              "note": "Transverse · Elbow pinned at 90° · Light load · Pressing hides a rotation demand — this preps it",
-              "restSeconds": null
-            },
-            {
-              "name": "Bodyweight Dips",
-              "sets": "2 × 10",
-              "note": "Sagittal push primer · Then ramp sets into Bench Press",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Primary Strength",
-          "icon": "fitness_center",
-          "type": "primary",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Barbell Bench Press",
-              "sets": "4 × 4–6",
-              "note": "2–3 min rest · Raise the 1RM on the Strength page when you hit 6 across all 4 sets",
-              "restSeconds": null,
-              "baselineId": "bench"
-            },
-            {
-              "name": "Standing Overhead Press",
-              "sets": "3 × 5–6",
-              "note": "2 min rest · Build from the bottom of the range, earn the top",
-              "restSeconds": null,
-              "baselineId": "ohp"
-            }
-          ]
-        },
-        {
-          "title": "Primary Strength — Triceps",
-          "icon": "fitness_center",
-          "type": "primary",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Close-Grip Bench Press",
-              "sets": "4 × 5–6",
-              "note": "2 min rest · Hit 6 across all 4 to earn the next load",
-              "restSeconds": null,
-              "baselineId": "cgbench"
-            }
-          ]
-        },
-        {
-          "title": "Chest — Lengthened & Shortened",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Incline DB Press",
-              "sets": "3 × 8–10",
-              "note": "90 sec rest · Pec in its lengthened position · Stop short of lockout so tension never leaves the top",
-              "restSeconds": null
-            },
-            {
-              "name": "Pec Deck",
-              "sets": "3 × 12–15",
-              "note": "60 sec rest · Pec shortened · Cam corrects what a DB fly can't — a dumbbell is nearly weightless at the squeeze",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Delts",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Cable Lateral Raise (low pulley, across body)",
-              "sets": "3 × 12–15",
-              "note": "60 sec rest · Cable across the body holds tension through the whole arc · A DB raise peaks at the top, where the delt is already shortened",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Triceps — Lengthened",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Overhead Cable Extension",
-              "sets": "3 × 8–10",
-              "note": "60 sec rest · Long head only reaches its stretch with the shoulder flexed · Cable over skull crusher — the barbell goes light exactly where you're most stretched",
-              "restSeconds": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "legs",
-      "label": "LEGS",
-      "day": "Saturday",
-      "sub": "Quads · Hamstrings · Glutes",
-      "accent": "#fce047",
-      "duration": "~75 min",
-      "notes": "Squat is the primary mover. RDL trains hip extension with the hamstring lengthened, the seated curl trains knee flexion from that same lengthened position — both hamstring jobs, every session.",
-      "isOff": false,
-      "sections": [
-        {
-          "title": "Warm-Up",
-          "icon": "auto_awesome",
-          "type": "warmup",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Feet-Elevated Side Crunch",
-              "sets": "2 × 5",
-              "note": "Frontal · Neutral push-up → lateral flexion → back to neutral",
-              "restSeconds": null
-            },
-            {
-              "name": "90/90 Hip Switches",
-              "sets": "2 × 10",
-              "note": "Transverse · Hip internal and external rotation under control",
-              "restSeconds": null
-            },
-            {
-              "name": "Hip CARs",
-              "sets": "2 × 5 / side",
-              "note": "Transverse · Full hip circle, slow · Then ramp sets into Squat",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Primary Strength",
-          "icon": "fitness_center",
-          "type": "primary",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Back Squat or Safety Bar Squat",
-              "sets": "4 × 3–5",
-              "note": "2–3 min rest · Two days clear of deadlift so neither lift is run on the other's fatigue",
-              "restSeconds": null,
-              "baselineId": "squat"
-            },
-            {
-              "name": "Romanian Deadlift",
-              "sets": "3 × 5–6",
-              "note": "2 min rest · Pattern over load · Hamstring lengthened at the hip — this is hip extension, not knee flexion",
-              "restSeconds": null,
-              "baselineId": "rdl"
-            }
-          ]
-        },
-        {
-          "title": "Quads — Lengthened & Shortened",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Hack Squat",
-              "sets": "3 × 8–10",
-              "note": "90 sec rest · Loads the quad deep in its lengthened position · Fixed path drops the balance tax the squat already charged you",
-              "restSeconds": null
-            },
-            {
-              "name": "Leg Extension",
-              "sets": "3 × 10–12",
-              "note": "60 sec rest · Quad shortened · Cam matches the strength curve where no free weight can",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Hamstrings — Knee Flexion",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Seated Leg Curl",
-              "sets": "3 × 10–12",
-              "note": "60 sec rest · Hip flexed leaves the hamstring fully lengthened before the curl · Seated, not lying — the lying version trains the shortened end instead",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Glutes — Shortened",
-          "icon": "layers",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Hip Thrust or Cable Pull-Through",
-              "sets": "3 × 12–15",
-              "note": "60 sec rest · Glute shortened · Pairs with the RDL's lengthened position for full curve coverage",
-              "restSeconds": null
-            }
-          ]
-        },
-        {
-          "title": "Rotation — Golf",
-          "icon": "sports_golf",
-          "type": "accessory",
-          "ar7": false,
-          "items": [
-            {
-              "name": "Cable Pallof Press",
-              "sets": "3 × 10 / side",
-              "note": "60 sec rest · Anti-rotation · Resist the rotation before you train producing it · Ribs down, hips square",
-              "restSeconds": null
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "baselines": [
-    {
-      "id": "bench",
-      "lift": "Bench Press",
-      "orm": 254,
-      "pctLow": 0.827,
-      "pctHigh": 0.846
-    },
-    {
-      "id": "ohp",
-      "lift": "Overhead Press",
-      "orm": 163,
-      "pctLow": 0.767,
-      "pctHigh": 0.798
-    },
-    {
-      "id": "squat",
-      "lift": "Back Squat",
-      "orm": 328,
-      "pctLow": 0.838,
-      "pctHigh": 0.869
-    },
-    {
-      "id": "rdl",
-      "lift": "Romanian Deadlift",
-      "orm": 254,
-      "pctLow": 0.728,
-      "pctHigh": 0.768
-    },
-    {
-      "id": "cgbench",
-      "lift": "Close-Grip Bench",
-      "orm": 200,
-      "pctLow": 0.775,
-      "pctHigh": 0.825
-    },
-    {
-      "id": "deadlift",
-      "lift": "Conventional Deadlift",
-      "orm": 365,
-      "pctLow": 0.82,
-      "pctHigh": 0.87
-    },
-    {
-      "id": "csrow",
-      "lift": "Chest-Supported Row",
-      "orm": 185,
-      "pctLow": 0.72,
-      "pctHigh": 0.78
-    }
-  ],
-  "weekdayMap": [
-    "off",
-    "off",
-    "off",
-    "off",
-    "pull",
-    "push",
-    "legs"
-  ]
-};
+// ── BUILT-IN PROGRAMS ─────────────────────────────────────────
+// Bundled with the app so they survive a cleared browser, a new device or a
+// lost file. The first is the default; the Import screen switches between
+// them. An imported CSV/JSON overrides whichever is selected. Generated from
+// programs/ by tools/embed-program.js — edit there, not here.
+const BUILT_IN_PROGRAMS = [
+  {
+    "id": "prog-field-guide-ppl",
+    "name": "Field Guide PPL",
+    "importedAt": "2026-09-20T00:00:00.000Z",
+    "locked": true,
+    "days": [
+      {
+        "id": "off",
+        "label": "OFF DAYS",
+        "day": "Sun–Wed",
+        "sub": "Recovery · Mobility",
+        "accent": "#9B8EE8",
+        "duration": "Optional",
+        "notes": "",
+        "isOff": true,
+        "sections": []
+      },
+      {
+        "id": "pull",
+        "label": "PULL",
+        "day": "Thursday",
+        "sub": "Back · Rear Delts · Biceps",
+        "accent": "#00e3fd",
+        "duration": "~70 min",
+        "notes": "Deadlift leads the week on the freshest day — it carries the most collateral of anything here and shouldn't run on accumulated fatigue. Everything after it is chest-supported or cable-based so the spine stops paying for back work.",
+        "isOff": false,
+        "sections": [
+          {
+            "title": "Warm-Up",
+            "icon": "auto_awesome",
+            "type": "warmup",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Dead Hang",
+                "sets": "2 × 20–30 sec",
+                "note": "Sagittal · Lat in full stretch · Decompress the spine before loading the hinge",
+                "restSeconds": null
+              },
+              {
+                "name": "Prone Y Raise",
+                "sets": "2 × 10",
+                "note": "Frontal · Lower trap and scapular upward rotation · Bodyweight only",
+                "restSeconds": null
+              },
+              {
+                "name": "Prone T Raise",
+                "sets": "2 × 10",
+                "note": "Transverse · Rear delt and external rotators · Warm-up runs the plane hierarchy simple → complex, then ramp sets into Deadlift",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Conventional Deadlift",
+                "sets": "3 × 3–5",
+                "note": "3 min rest · Full recovery between sets · Highest collateral cost in the program, which is why it gets the freshest day",
+                "restSeconds": null,
+                "baselineId": "deadlift"
+              },
+              {
+                "name": "Weighted Pull-Up or Lat Pulldown",
+                "sets": "3 × 5–6",
+                "note": "2 min rest · Vertical pull · Load the pattern here, isolate the lat later",
+                "restSeconds": null
+              },
+              {
+                "name": "Chest-Supported DB or Machine Row",
+                "sets": "3 × 6–8",
+                "note": "2 min rest · Chest support strips the spinal shear out after deadlift — same row stimulus, far less collateral",
+                "restSeconds": null,
+                "baselineId": "csrow"
+              }
+            ]
+          },
+          {
+            "title": "Lat — Lengthened",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Single-Arm Cable Pulldown",
+                "sets": "3 × 10–12 / side",
+                "note": "60 sec rest · Gets to the lat in isolation faster than a bilateral pulldown · Cable holds tension at full overhead stretch, where a free weight goes light",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Rear Delts",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Reverse Pec Deck",
+                "sets": "3 × 12–15",
+                "note": "60 sec rest · Cam holds tension through the arc · A DB reverse fly is heaviest at the top, exactly where the rear delt is shortest and weakest",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Biceps — Lengthened",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Incline DB Curl",
+                "sets": "3 × 10–12",
+                "note": "60 sec rest · Shoulder extended puts the long head in its lengthened position · 3 sec eccentric, no body English",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Rotation — Golf",
+            "icon": "sports_golf",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Landmine Rotation",
+                "sets": "3 × 8–10 / side",
+                "note": "60 sec rest · Transverse plane · Hip-to-shoulder sequence, driven from the ground · Velocity is the point — add load only every 3–4 weeks",
+                "restSeconds": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "push",
+        "label": "PUSH",
+        "day": "Friday",
+        "sub": "Chest · Shoulders · Triceps",
+        "accent": "#cafd00",
+        "duration": "~75 min",
+        "notes": "Three pressing angles, then position work. The cable and cam picks aren't preference — a dumbbell is heaviest where the delt and pec are already shortened, which caps how much you can actually load them there.",
+        "isOff": false,
+        "sections": [
+          {
+            "title": "Warm-Up",
+            "icon": "auto_awesome",
+            "type": "warmup",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Band Pull-Aparts",
+                "sets": "2 × 15",
+                "note": "Frontal · Scapular retraction · Rear delt counterbalance before pressing",
+                "restSeconds": null
+              },
+              {
+                "name": "DB External Rotation (side-lying)",
+                "sets": "2 × 10 / side",
+                "note": "Transverse · Elbow pinned at 90° · Light load · Pressing hides a rotation demand — this preps it",
+                "restSeconds": null
+              },
+              {
+                "name": "Bodyweight Dips",
+                "sets": "2 × 10",
+                "note": "Sagittal push primer · Then ramp sets into Bench Press",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Barbell Bench Press",
+                "sets": "4 × 4–6",
+                "note": "2–3 min rest · Raise the 1RM on the Strength page when you hit 6 across all 4 sets",
+                "restSeconds": null,
+                "baselineId": "bench"
+              },
+              {
+                "name": "Standing Overhead Press",
+                "sets": "3 × 5–6",
+                "note": "2 min rest · Build from the bottom of the range, earn the top",
+                "restSeconds": null,
+                "baselineId": "ohp"
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength — Triceps",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Close-Grip Bench Press",
+                "sets": "4 × 5–6",
+                "note": "2 min rest · Hit 6 across all 4 to earn the next load",
+                "restSeconds": null,
+                "baselineId": "cgbench"
+              }
+            ]
+          },
+          {
+            "title": "Chest — Lengthened & Shortened",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Incline DB Press",
+                "sets": "3 × 8–10",
+                "note": "90 sec rest · Pec in its lengthened position · Stop short of lockout so tension never leaves the top",
+                "restSeconds": null
+              },
+              {
+                "name": "Pec Deck",
+                "sets": "3 × 12–15",
+                "note": "60 sec rest · Pec shortened · Cam corrects what a DB fly can't — a dumbbell is nearly weightless at the squeeze",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Delts",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Cable Lateral Raise (low pulley, across body)",
+                "sets": "3 × 12–15",
+                "note": "60 sec rest · Cable across the body holds tension through the whole arc · A DB raise peaks at the top, where the delt is already shortened",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Triceps — Lengthened",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Overhead Cable Extension",
+                "sets": "3 × 8–10",
+                "note": "60 sec rest · Long head only reaches its stretch with the shoulder flexed · Cable over skull crusher — the barbell goes light exactly where you're most stretched",
+                "restSeconds": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "legs",
+        "label": "LEGS",
+        "day": "Saturday",
+        "sub": "Quads · Hamstrings · Glutes",
+        "accent": "#fce047",
+        "duration": "~75 min",
+        "notes": "Squat is the primary mover. RDL trains hip extension with the hamstring lengthened, the seated curl trains knee flexion from that same lengthened position — both hamstring jobs, every session.",
+        "isOff": false,
+        "sections": [
+          {
+            "title": "Warm-Up",
+            "icon": "auto_awesome",
+            "type": "warmup",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Feet-Elevated Side Crunch",
+                "sets": "2 × 5",
+                "note": "Frontal · Neutral push-up → lateral flexion → back to neutral",
+                "restSeconds": null
+              },
+              {
+                "name": "90/90 Hip Switches",
+                "sets": "2 × 10",
+                "note": "Transverse · Hip internal and external rotation under control",
+                "restSeconds": null
+              },
+              {
+                "name": "Hip CARs",
+                "sets": "2 × 5 / side",
+                "note": "Transverse · Full hip circle, slow · Then ramp sets into Squat",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Back Squat or Safety Bar Squat",
+                "sets": "4 × 3–5",
+                "note": "2–3 min rest · Two days clear of deadlift so neither lift is run on the other's fatigue",
+                "restSeconds": null,
+                "baselineId": "squat"
+              },
+              {
+                "name": "Romanian Deadlift",
+                "sets": "3 × 5–6",
+                "note": "2 min rest · Pattern over load · Hamstring lengthened at the hip — this is hip extension, not knee flexion",
+                "restSeconds": null,
+                "baselineId": "rdl"
+              }
+            ]
+          },
+          {
+            "title": "Quads — Lengthened & Shortened",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Hack Squat",
+                "sets": "3 × 8–10",
+                "note": "90 sec rest · Loads the quad deep in its lengthened position · Fixed path drops the balance tax the squat already charged you",
+                "restSeconds": null
+              },
+              {
+                "name": "Leg Extension",
+                "sets": "3 × 10–12",
+                "note": "60 sec rest · Quad shortened · Cam matches the strength curve where no free weight can",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Hamstrings — Knee Flexion",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Seated Leg Curl",
+                "sets": "3 × 10–12",
+                "note": "60 sec rest · Hip flexed leaves the hamstring fully lengthened before the curl · Seated, not lying — the lying version trains the shortened end instead",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Glutes — Shortened",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Hip Thrust or Cable Pull-Through",
+                "sets": "3 × 12–15",
+                "note": "60 sec rest · Glute shortened · Pairs with the RDL's lengthened position for full curve coverage",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Rotation — Golf",
+            "icon": "sports_golf",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Cable Pallof Press",
+                "sets": "3 × 10 / side",
+                "note": "60 sec rest · Anti-rotation · Resist the rotation before you train producing it · Ribs down, hips square",
+                "restSeconds": null
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "baselines": [
+      {
+        "id": "bench",
+        "lift": "Bench Press",
+        "orm": 254,
+        "pctLow": 0.827,
+        "pctHigh": 0.846
+      },
+      {
+        "id": "ohp",
+        "lift": "Overhead Press",
+        "orm": 163,
+        "pctLow": 0.767,
+        "pctHigh": 0.798
+      },
+      {
+        "id": "squat",
+        "lift": "Back Squat",
+        "orm": 328,
+        "pctLow": 0.838,
+        "pctHigh": 0.869
+      },
+      {
+        "id": "rdl",
+        "lift": "Romanian Deadlift",
+        "orm": 254,
+        "pctLow": 0.728,
+        "pctHigh": 0.768
+      },
+      {
+        "id": "cgbench",
+        "lift": "Close-Grip Bench",
+        "orm": 200,
+        "pctLow": 0.775,
+        "pctHigh": 0.825
+      },
+      {
+        "id": "deadlift",
+        "lift": "Conventional Deadlift",
+        "orm": 365,
+        "pctLow": 0.82,
+        "pctHigh": 0.87
+      },
+      {
+        "id": "csrow",
+        "lift": "Chest-Supported Row",
+        "orm": 185,
+        "pctLow": 0.72,
+        "pctHigh": 0.78
+      }
+    ],
+    "weekdayMap": [
+      "off",
+      "off",
+      "off",
+      "off",
+      "pull",
+      "push",
+      "legs"
+    ]
+  },
+  {
+    "id": "prog-ar7-hybrid",
+    "name": "AR-7 Hybrid Program",
+    "importedAt": "2026-06-12T00:00:00.000Z",
+    "locked": true,
+    "days": [
+      {
+        "id": "off",
+        "label": "OFF DAYS",
+        "day": "Mon–Wed",
+        "sub": "Recovery · Conditioning · Mobility",
+        "accent": "#9B8EE8",
+        "duration": "Optional",
+        "notes": "",
+        "isOff": true,
+        "sections": []
+      },
+      {
+        "id": "push",
+        "label": "PUSH",
+        "day": "Thursday",
+        "sub": "Chest · Shoulders · Triceps",
+        "accent": "#cafd00",
+        "duration": "~65 min",
+        "notes": "Focus on controlled eccentrics on Bench. AR-7 block is chest hypertrophy — keep rest to 15–20 sec.",
+        "isOff": false,
+        "sections": [
+          {
+            "title": "Warm-Up",
+            "icon": "auto_awesome",
+            "type": "warmup",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Band Pull-Aparts",
+                "sets": "2 × 15",
+                "note": "Frontal plane · Scapular retraction · Rear delt counterbalance before pressing",
+                "restSeconds": null
+              },
+              {
+                "name": "DB External Rotation (side-lying)",
+                "sets": "2 × 10 / side",
+                "note": "Transverse plane · Elbow pinned at 90° · Light load · Rotator cuff activation · Pressing involves hidden shoulder rotation — this preps it",
+                "restSeconds": null
+              },
+              {
+                "name": "Bodyweight Dips",
+                "sets": "2 × 10",
+                "note": "Sagittal push primer · Then ramp sets into Bench Press",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Barbell Bench Press",
+                "sets": "4 × 4–6",
+                "note": "2–3 min rest · Progress to 220 when hitting 6 across all 4 sets",
+                "restSeconds": null,
+                "baselineId": "bench"
+              },
+              {
+                "name": "Standing Overhead Press",
+                "sets": "3 × 5–6",
+                "note": "2 min rest · Build from 125, earn 130",
+                "restSeconds": null,
+                "baselineId": "ohp"
+              }
+            ]
+          },
+          {
+            "title": "AR-7 Block — Chest Focus",
+            "icon": "diamond",
+            "type": "ar7",
+            "ar7": true,
+            "items": [
+              {
+                "name": "Action: Incline DB Press",
+                "sets": "6–8 reps",
+                "note": "",
+                "restSeconds": null
+              },
+              {
+                "name": "Reaction: DB Fly or Pec Deck",
+                "sets": "12–15 reps",
+                "note": "7 rounds · 15–20 sec rest",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Accessories",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Cable Lateral Raises (low pulley)",
+                "sets": "3 × 12–15",
+                "note": "Cable across body · Maintains tension through full arc · No dumbbell momentum",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Micro Arm Add-On — Triceps",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Rope Pushdowns or Overhead Cable Extensions",
+                "sets": "3 × 10–12",
+                "note": "~60 sec rest · Add reps first, then load — stop 1–2 reps from failure",
+                "restSeconds": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "pull",
+        "label": "PULL",
+        "day": "Friday",
+        "sub": "Back · Rear Delts · Biceps",
+        "accent": "#00e3fd",
+        "duration": "~75 min",
+        "notes": "Prioritize full scapular retraction on rows. Dirty 30s are a rear delt movement — supinated-to-neutral-to-hip curl sequence, no stopping.",
+        "isOff": false,
+        "sections": [
+          {
+            "title": "Warm-Up",
+            "icon": "auto_awesome",
+            "type": "warmup",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Dead Hang",
+                "sets": "2 × 20–30 sec",
+                "note": "Sagittal · Lat in fully lengthened position · Direct pulling prep · Spinal decompression",
+                "restSeconds": null
+              },
+              {
+                "name": "Prone Y Raises",
+                "sets": "2 × 10",
+                "note": "Frontal plane · Lower trap and scapular upward rotation · Bodyweight only",
+                "restSeconds": null
+              },
+              {
+                "name": "Prone T Raises",
+                "sets": "2 × 10",
+                "note": "Transverse plane · Rear delt and external rotators · Then ramp sets into Pull-Ups",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Conventional Deadlift",
+                "sets": "3 × 3–5",
+                "note": "3 min rest · Lead lift · Full recovery between sets",
+                "restSeconds": null,
+                "baselineId": "deadlift"
+              },
+              {
+                "name": "Weighted Pull-Ups or Lat Pulldown",
+                "sets": "3 × 5–6",
+                "note": "2 min rest",
+                "restSeconds": null
+              },
+              {
+                "name": "Chest-Supported DB or Machine Row",
+                "sets": "3 × 6–8",
+                "note": "2 min rest · Lumbar demand removed after deadlift",
+                "restSeconds": null,
+                "baselineId": "csrow"
+              }
+            ]
+          },
+          {
+            "title": "AR-7 Block — Back Focus",
+            "icon": "diamond",
+            "type": "ar7",
+            "ar7": true,
+            "items": [
+              {
+                "name": "Action: Single-Arm Cable Row",
+                "sets": "6–8 reps / side",
+                "note": "Constant tension through full ROM · Load maintained at full arm extension · Same stack as Lat Pulldown · No transition",
+                "restSeconds": null
+              },
+              {
+                "name": "Reaction: Straight-Arm Pulldown or Band Pullover",
+                "sets": "12–15 reps",
+                "note": "7 rounds · minimal rest",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Accessories — Rear Delts",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Dirty 30s",
+                "sets": "3 × 15",
+                "note": "Supinated ×10 → Neutral ×10 → Hip drive neutral ×10 · Rear delt tri-position protocol",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Micro Arm Add-On — Biceps",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Hammer Curl",
+                "sets": "3 × 10–12",
+                "note": "~60 sec rest · Add reps first, then load slowly — stop 1–2 reps from failure",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Finisher",
+            "icon": "flag",
+            "type": "finisher",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Farmer Carries",
+                "sets": "2 × 30–40m",
+                "note": "Week A · ~60 sec rest · Distance before load",
+                "restSeconds": null
+              },
+              {
+                "name": "Landmine Rotations",
+                "sets": "3 × 8–10 / side",
+                "note": "Week B · ~60 sec rest · Velocity-based · Hip-to-shoulder sequence · Load only every 3–4 weeks",
+                "restSeconds": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "legs",
+        "label": "LEGS",
+        "day": "Saturday",
+        "sub": "Quads · Hamstrings · Glutes · Core",
+        "accent": "#cafd00",
+        "duration": "~68 min",
+        "notes": "Hip mobility warm-up is mandatory. Squat is the primary mover. RDL covers hip extension; seated leg curl covers knee flexion — both hamstring functions trained every session.",
+        "isOff": false,
+        "sections": [
+          {
+            "title": "Warm-Up",
+            "icon": "auto_awesome",
+            "type": "warmup",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Feet Elevated Side Crunches",
+                "sets": "2 × 5",
+                "note": "Neutral push-up → lateral flexion → back to neutral",
+                "restSeconds": null
+              },
+              {
+                "name": "90/90 Hip Switches",
+                "sets": "2 × 10",
+                "note": "",
+                "restSeconds": null
+              },
+              {
+                "name": "Hip CARs",
+                "sets": "2 × 5 / side",
+                "note": "",
+                "restSeconds": null
+              },
+              {
+                "name": "Pallof Press",
+                "sets": "2 × 10 / side",
+                "note": "Anti-rotation activation · Light-moderate · Then ramp sets into Squat",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Back Squat or Safety Bar Squat",
+                "sets": "4 × 3–5",
+                "note": "2–3 min rest · 295 is next target",
+                "restSeconds": null,
+                "baselineId": "squat"
+              },
+              {
+                "name": "Romanian Deadlift",
+                "sets": "3 × 5–6",
+                "note": "2 min rest · Pattern over load · Hamstring hip extension",
+                "restSeconds": null,
+                "baselineId": "rdl"
+              }
+            ]
+          },
+          {
+            "title": "AR-7 Block — Quad Focus",
+            "icon": "diamond",
+            "type": "ar7",
+            "ar7": true,
+            "items": [
+              {
+                "name": "Action: Goblet Squat",
+                "sets": "6–8 reps",
+                "note": "Quad lengthened position · Upright torso · Load secondary to depth and control",
+                "restSeconds": null
+              },
+              {
+                "name": "Reaction: Leg Extension",
+                "sets": "10–12 reps",
+                "note": "7 rounds · 15–20 sec rest · Quad shortened position · Cam machine matches strength curve",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Hamstring Isolation",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Seated Leg Curl",
+                "sets": "3 × 10–12",
+                "note": "60 sec rest · Hip flexed = hamstring fully lengthened before curl · Knee flexion pattern · Pairs with RDL hip extension for complete hamstring coverage",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Glute Isolation",
+            "icon": "layers",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Hip Thrust or Cable Pull-Through",
+                "sets": "3 × 12–15",
+                "note": "60 sec rest · Glute shortened position · Pairs with RDL lengthened position for full strength curve coverage",
+                "restSeconds": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "arms",
+        "label": "ARMS + LEGS",
+        "day": "Sunday",
+        "sub": "Biceps · Triceps · Unilateral Legs",
+        "accent": "#fce047",
+        "duration": "~69 min",
+        "notes": "Arms are pre-fatigued from the week. BSS is submaximal by design — pattern quality, not new PRs. Hip work lives on Saturday.",
+        "isOff": false,
+        "sections": [
+          {
+            "title": "Warm-Up",
+            "icon": "auto_awesome",
+            "type": "warmup",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Wrist Circles + Forearm Stretch",
+                "sets": "2 × 10 each direction",
+                "note": "",
+                "restSeconds": null
+              },
+              {
+                "name": "Band Pull-Aparts",
+                "sets": "2 × 15",
+                "note": "Shoulder health primer",
+                "restSeconds": null
+              },
+              {
+                "name": "Cable Rope Pushdown (light)",
+                "sets": "1 × 20",
+                "note": "Elbow warm-up",
+                "restSeconds": null
+              },
+              {
+                "name": "EZ-Bar Curl (light)",
+                "sets": "1 × 15",
+                "note": "Then ramp into Close-Grip Bench",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength — Triceps",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Close-Grip Bench Press",
+                "sets": "4 × 5–6",
+                "note": "2 min rest · Hit 6 across all 4 to earn next load",
+                "restSeconds": null,
+                "baselineId": "cgbench"
+              }
+            ]
+          },
+          {
+            "title": "Primary Strength — Biceps",
+            "icon": "fitness_center",
+            "type": "primary",
+            "ar7": false,
+            "items": [
+              {
+                "name": "EZ-Bar Curl or Barbell Curl",
+                "sets": "4 × 6–8",
+                "note": "90 sec rest · 3 sec eccentric, no body English · Add reps first (6→8), then +2.5 lb",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "AR-7 Block — Triceps Focus",
+            "icon": "diamond",
+            "type": "ar7",
+            "ar7": true,
+            "items": [
+              {
+                "name": "Action: Overhead Cable Extension",
+                "sets": "8–10 reps",
+                "note": "Long head stretch position · Default to cable; skull crusher if cables unavailable",
+                "restSeconds": null
+              },
+              {
+                "name": "Reaction: Rope Pushdown",
+                "sets": "12–15 reps",
+                "note": "7 rounds · 15–20 sec rest · Lateral head in shortened position",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Superset — Biceps Hypertrophy",
+            "icon": "repeat",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "A1: Incline DB Curl",
+                "sets": "3 × 10–12",
+                "note": "Long head · Lengthened position",
+                "restSeconds": null
+              },
+              {
+                "name": "A2: Concentration Curl or Spider Curl",
+                "sets": "3 × 10–12",
+                "note": "60 sec between supersets · Short head peak contraction",
+                "restSeconds": null
+              }
+            ]
+          },
+          {
+            "title": "Unilateral Legs — Quad",
+            "icon": "directions_run",
+            "type": "accessory",
+            "ar7": false,
+            "items": [
+              {
+                "name": "Bulgarian Split Squat",
+                "sets": "3 × 8–10 / leg @ 50–70 lb DBs",
+                "note": "90 sec rest · Submaximal — legs pre-fatigued from Saturday",
+                "restSeconds": null
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "baselines": [
+      {
+        "id": "bench",
+        "lift": "Bench Press",
+        "orm": 254,
+        "pctLow": 0.827,
+        "pctHigh": 0.846
+      },
+      {
+        "id": "ohp",
+        "lift": "Overhead Press",
+        "orm": 163,
+        "pctLow": 0.767,
+        "pctHigh": 0.798
+      },
+      {
+        "id": "squat",
+        "lift": "Back Squat",
+        "orm": 328,
+        "pctLow": 0.838,
+        "pctHigh": 0.869
+      },
+      {
+        "id": "rdl",
+        "lift": "Romanian Deadlift",
+        "orm": 254,
+        "pctLow": 0.728,
+        "pctHigh": 0.768
+      },
+      {
+        "id": "cgbench",
+        "lift": "Close-Grip Bench",
+        "orm": 200,
+        "pctLow": 0.775,
+        "pctHigh": 0.825
+      },
+      {
+        "id": "deadlift",
+        "lift": "Conventional Deadlift",
+        "orm": 365,
+        "pctLow": 0.82,
+        "pctHigh": 0.87
+      },
+      {
+        "id": "csrow",
+        "lift": "Chest-Supported Row",
+        "orm": 185,
+        "pctLow": 0.72,
+        "pctHigh": 0.78
+      }
+    ],
+    "weekdayMap": [
+      "arms",
+      "off",
+      "off",
+      "off",
+      "push",
+      "pull",
+      "legs"
+    ]
+  }
+];
 
 // ── STATE ──────────────────────────────────────────────────
 let PROGRAM  = null;
@@ -1139,10 +1712,25 @@ function clearProgram() {
 }
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
 function currentProgramId() { return (PROGRAM && PROGRAM.id) || 'none'; }
+function builtInById(id) {
+  for (let i = 0; i < BUILT_IN_PROGRAMS.length; i++) {
+    if (BUILT_IN_PROGRAMS[i].id === id) return BUILT_IN_PROGRAMS[i];
+  }
+  return null;
+}
+// The chosen built-in, falling back to the first if nothing is stored or the
+// stored id belonged to a program that has since been removed.
+function selectedBuiltIn() {
+  let id = null;
+  try { id = localStorage.getItem(LS_BUILTIN); } catch(e) {}
+  return builtInById(id) || BUILT_IN_PROGRAMS[0] || null;
+}
 function isLockedActive() { return !loadStoredProgram(); }
 function initProgramState() {
-  // An imported program overrides the built-in locked program.
-  PROGRAM = loadStoredProgram() || clone(LOCKED_PROGRAM);
+  // An imported program overrides the selected built-in.
+  const base = loadStoredProgram() || selectedBuiltIn();
+  PROGRAM = base ? clone(base) : null;
+  if (!PROGRAM) { DAYS = []; BASELINES = []; activeDay = 'off'; return; }
   DAYS = PROGRAM.days || [];
   BASELINES = PROGRAM.baselines || [];
   const todayId = PROGRAM.weekdayMap ? PROGRAM.weekdayMap[new Date().getDay()] : null;
@@ -2035,7 +2623,22 @@ function renderImportPage() {
       (locked ? '' : '<button class="btn-ghost" style="margin-top:0.5rem;width:100%;border-color:rgba(255,115,81,0.3);color:#ff7351" onclick="confirmClearProgram()"><span class="mi mi-sm">restore</span>Restore Built-In Program</button>') +
       '</div>';
   }
-  el.innerHTML = programCardHtml +
+  const builtInsHtml = BUILT_IN_PROGRAMS.length < 2 ? '' :
+    '<div class="import-section-title">Built-In Programs</div>' +
+    BUILT_IN_PROGRAMS.map(function(p) {
+      const on = isLockedActive() && PROGRAM && PROGRAM.id === p.id;
+      const trainDays = p.days.filter(function(d) { return !d.isOff; }).length;
+      const lifts = p.days.reduce(function(a, d) {
+        return a + d.sections.reduce(function(x, s) { return x + s.items.length; }, 0);
+      }, 0);
+      return '<button class="builtin-row' + (on ? ' on' : '') + '" onclick="selectBuiltIn(\'' + p.id + '\')">' +
+        '<span class="mi builtin-mark">' + (on ? 'radio_button_checked' : 'radio_button_unchecked') + '</span>' +
+        '<span class="builtin-text"><span class="builtin-name">' + p.name + '</span>' +
+        '<span class="builtin-meta">' + trainDays + ' training day' + (trainDays !== 1 ? 's' : '') + ' \xB7 ' + lifts + ' exercises</span></span>' +
+        '</button>';
+    }).join('');
+
+  el.innerHTML = programCardHtml + builtInsHtml +
     '<div class="import-section-title">Import New Program</div>' +
     '<div class="upload-zone" id="uploadZone"><span class="mi upload-zone-icon">upload_file</span><div class="upload-zone-label">Tap to select CSV or JSON</div><div class="upload-zone-sub">or drag and drop</div></div>' +
     '<input type="file" id="csvFileInput" accept=".csv,.json,text/csv,application/json" style="display:none"/>' +
@@ -2071,7 +2674,8 @@ function handleProgramFile(file) {
         program.name = program.name || file.name.replace(/\.json$/i,'');
         program.baselines = program.baselines || [];
         program.importedAt = new Date().toISOString();
-        if (program.id === LOCKED_PROGRAM.id) program.id = program.id + '-import';
+        // Keep an imported copy from colliding with a built-in's baselines.
+        if (builtInById(program.id)) program.id = program.id + '-import';
       } else {
         const rows = parseCSV(e.target.result);
         const programName = file.name.replace(/\.csv$/i,'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
@@ -2095,8 +2699,20 @@ function handleProgramFile(file) {
   reader.readAsText(file);
 }
 window.confirmClearProgram = function() {
-  if (!confirm('Restore the built-in ' + LOCKED_PROGRAM.name + '? The imported program is removed. Session history and 1RM baselines are kept.')) return;
+  const back = selectedBuiltIn();
+  if (!confirm('Restore ' + (back ? back.name : 'the built-in program') + '? The imported program is removed. Session history and 1RM baselines are kept.')) return;
   clearProgram(); renderImportPage(); render(); renderBaselines();
+};
+
+window.selectBuiltIn = function(id) {
+  const p = builtInById(id);
+  if (!p) return;
+  // Picking a built-in drops any imported program, so say so first.
+  if (loadStoredProgram() && !confirm('Switch to ' + p.name + '? The imported program will be removed. Session history and 1RM baselines are kept.')) return;
+  try { localStorage.setItem(LS_BUILTIN, id); } catch(e) {}
+  try { localStorage.removeItem(LS_PROGRAM); } catch(e) {}
+  initProgramState();
+  renderImportPage(); render(); renderBaselines();
 };
 
 // Dumps the active program, with current 1RMs folded in, as a re-importable file.
