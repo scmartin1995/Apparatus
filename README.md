@@ -30,6 +30,11 @@ overrides whichever built-in is selected. *Restore Built-In Program* drops the
 override, and picking a built-in from the list does too. You can't end up with no
 program loaded.
 
+A day marked `isOff` is read-only — no session, no logging. If it defines
+sections they render like any other day; if it defines none, the app falls back
+to a generic recovery/mobility screen built into `renderOffDays`. Field Guide PPL
+defines its own, AR-7 uses the fallback.
+
 1RM baselines are stored per program id, so each program keeps its own numbers —
 switching between two built-ins, or out to an import and back, never overwrites
 them. Session history is shared and is never touched by a switch, import, or
