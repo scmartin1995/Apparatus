@@ -12,27 +12,28 @@ from then on.
 
 The app always has a program loaded. There are two ways one gets there.
 
-**The locked program.** One program is bundled into `index.html` as
-`LOCKED_PROGRAM`. It loads on first run, after a cleared browser, and on any new
-device. Nothing to upload, nothing to lose.
-
-Programs live in [`programs/`](programs), and the bundled one is a copy of
-whichever file was last embedded:
+**A built-in program.** Every program in [`programs/`](programs) is bundled into
+`index.html` as `BUILT_IN_PROGRAMS`, and *Built-In Programs* on the Import screen
+switches between them. They work on first run, after a cleared browser, and on a
+new device — nothing to upload, nothing to lose.
 
 | file | |
 | --- | --- |
-| [`field-guide-ppl.json`](programs/field-guide-ppl.json) | **currently bundled** — 3-day PPL (Thu/Fri/Sat), exercise selection driven by the Pre-Script Coach's Field Guide |
-| [`ar7-hybrid.json`](programs/ar7-hybrid.json) | 4-day hybrid with AR-7 Action/Reaction blocks. Not bundled, but kept here and importable as JSON. |
+| [`field-guide-ppl.json`](programs/field-guide-ppl.json) | **default** — 3-day PPL (Thu/Fri/Sat), exercise selection driven by the Pre-Script Coach's Field Guide |
+| [`ar7-hybrid.json`](programs/ar7-hybrid.json) | 4-day hybrid with AR-7 Action/Reaction blocks |
 
-Swap which one ships with `node tools/embed-program.js programs/<file>.json`.
+[`programs/index.json`](programs/index.json) is the ordered list of what ships.
+First entry is the default. Add a file, add it there, re-run the embed script.
 
 **An imported program.** Import a CSV (or a previously exported JSON) and it
-overrides the locked program. *Restore Built-In Program* on the Import screen
-drops the override and falls back to AR-7. You can't end up with no program.
+overrides whichever built-in is selected. *Restore Built-In Program* drops the
+override, and picking a built-in from the list does too. You can't end up with no
+program loaded.
 
-1RM baselines are stored per program, so switching between AR-7 and an imported
-program doesn't wipe either one's numbers. Session history is never touched by
-an import or a restore.
+1RM baselines are stored per program id, so each program keeps its own numbers —
+switching between two built-ins, or out to an import and back, never overwrites
+them. Session history is shared and is never touched by a switch, import, or
+restore.
 
 ### Baselines drive the loads
 
@@ -87,20 +88,22 @@ index.html                      the entire app
 sw.js                           service worker (bump CACHE_NAME to ship an update)
 manifest.json                   PWA manifest
 icon-192.png / icon-512.png     app icons
-programs/*.json                 program definitions, one of which is bundled
-tools/embed-program.js          validates a program and inlines it into index.html
+programs/*.json                 program definitions
+programs/index.json             ordered list of what ships; first is the default
+tools/embed-program.js          validates them and inlines them into index.html
 apparatus-program-template.csv  CSV reference
 ```
 
-Edit a program in `programs/`, then run `node tools/embed-program.js` to push it
-into the `LOCKED_PROGRAM` block. The app has to inline the program to work
+Edit a program in `programs/`, then run `node tools/embed-program.js` to push
+them all into the `BUILT_IN_PROGRAMS` block. The app has to inline them to work
 offline, and that script is what keeps the two copies from drifting.
 
 It validates before it writes, and refuses on anything that would fail quietly
 at runtime — an unknown `section_type` (which would silently mis-score a
 session), a `baselineId` with no matching baseline, a baseline-bound exercise
-that still has a fixed load in its sets string, or a `weekdayMap` entry naming a
-day that doesn't exist.
+that still has a fixed load in its sets string, a `weekdayMap` entry naming a day
+that doesn't exist, or two programs sharing an `id` (which would make them share
+one set of 1RMs).
 
 ## Local preview
 
