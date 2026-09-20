@@ -8,12 +8,56 @@
       "id": "off",
       "label": "OFF DAYS",
       "day": "Sun–Wed",
-      "sub": "Recovery · Mobility",
+      "sub": "Recovery · Conditioning · Mobility",
       "accent": "#9B8EE8",
       "duration": "Optional",
-      "notes": "",
+      "notes": "All of this is optional and capped on purpose. It exists to support recovery and the golf swing — not to compete with Thursday's deadlift for the same recovery.",
       "isOff": true,
-      "sections": []
+      "sections": [
+        {
+          "title": "Easy Aerobic — Pick One",
+          "icon": "directions_bike",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            { "name": "Bike — Steady State", "sets": "20–40 min", "note": "Conversational pace · Nasal breathing if you can hold it · Stationary or road, flat to rolling · Should feel easier at the end than at the start", "restSeconds": null },
+            { "name": "Jump Rope — Steady State", "sets": "10–15 min", "note": "Easy pace · Nasal breathing only · Not a conditioning session", "restSeconds": null }
+          ]
+        },
+        {
+          "title": "Conditioning — Pick One",
+          "icon": "bolt",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            { "name": "Bike — Intervals", "sets": "6 × 1 min hard / 2 min easy", "note": "~20 min with warm-up and cool-down · Hard enough that talking is difficult, not all-out · Seated against real resistance beats spinning out against none", "restSeconds": null },
+            { "name": "Jump Rope — Intervals", "sets": "5 × 1 min fast / 1 min easy", "note": "Total ~10 min · Push pace on work intervals · Walk or slow spin on rest", "restSeconds": null }
+          ]
+        },
+        {
+          "title": "Mobility — Optional",
+          "icon": "self_improvement",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            { "name": "90/90 Hip Switches", "sets": "2 × 10", "note": "", "restSeconds": null },
+            { "name": "Hip CARs", "sets": "2 × 5 / side", "note": "", "restSeconds": null },
+            { "name": "Dead Hang", "sets": "2 × 30 sec", "note": "", "restSeconds": null },
+            { "name": "Thoracic Rotations", "sets": "2 × 10 / side", "note": "", "restSeconds": null }
+          ]
+        },
+        {
+          "title": "Frequency",
+          "icon": "calendar_month",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            { "name": "Easy Aerobic", "sets": "1–2 × / week", "note": "", "restSeconds": null },
+            { "name": "Conditioning", "sets": "1 × / week", "note": "Not the day before Thursday", "restSeconds": null },
+            { "name": "Full Rest", "sets": "At least 1 day", "note": "Full rest means full rest. Mobility is not mandatory. Sleep is.", "restSeconds": null }
+          ]
+        }
+      ]
     },
     {
       "id": "pull",
