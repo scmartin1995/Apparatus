@@ -12,10 +12,19 @@ from then on.
 
 The app always has a program loaded. There are two ways one gets there.
 
-**The locked program.** `AR-7 Hybrid Program` is bundled into `index.html` as
+**The locked program.** One program is bundled into `index.html` as
 `LOCKED_PROGRAM`. It loads on first run, after a cleared browser, and on any new
-device. Nothing to upload, nothing to lose. The same data is mirrored in
-readable form at [`programs/ar7-hybrid.json`](programs/ar7-hybrid.json).
+device. Nothing to upload, nothing to lose.
+
+Programs live in [`programs/`](programs), and the bundled one is a copy of
+whichever file was last embedded:
+
+| file | |
+| --- | --- |
+| [`field-guide-ppl.json`](programs/field-guide-ppl.json) | **currently bundled** — 3-day PPL (Thu/Fri/Sat), exercise selection driven by the Pre-Script Coach's Field Guide |
+| [`ar7-hybrid.json`](programs/ar7-hybrid.json) | 4-day hybrid with AR-7 Action/Reaction blocks. Not bundled, but kept here and importable as JSON. |
+
+Swap which one ships with `node tools/embed-program.js programs/<file>.json`.
 
 **An imported program.** Import a CSV (or a previously exported JSON) and it
 overrides the locked program. *Restore Built-In Program* on the Import screen
@@ -39,8 +48,8 @@ weight badge during a session agrees with the prescribed target instead of
 falling back to a generic rep-percentage curve. Exercises without a baseline
 keep whatever load is written into their sets string.
 
-In AR-7 the bound lifts are bench, overhead press, back squat, RDL, close-grip
-bench, deadlift, and chest-supported row.
+The bound lifts are bench, overhead press, back squat, RDL, close-grip bench,
+deadlift, and chest-supported row — the same seven in both programs.
 
 ### CSV format
 
@@ -78,15 +87,20 @@ index.html                      the entire app
 sw.js                           service worker (bump CACHE_NAME to ship an update)
 manifest.json                   PWA manifest
 icon-192.png / icon-512.png     app icons
-programs/ar7-hybrid.json        the locked program, in readable form
-tools/embed-program.js          syncs that JSON into index.html
+programs/*.json                 program definitions, one of which is bundled
+tools/embed-program.js          validates a program and inlines it into index.html
 apparatus-program-template.csv  CSV reference
 ```
 
-Edit the locked program in `programs/ar7-hybrid.json`, then run
-`node tools/embed-program.js` to push it into the `LOCKED_PROGRAM` block. The
-app has to inline the program to work offline, and that script is what keeps the
-two copies from drifting.
+Edit a program in `programs/`, then run `node tools/embed-program.js` to push it
+into the `LOCKED_PROGRAM` block. The app has to inline the program to work
+offline, and that script is what keeps the two copies from drifting.
+
+It validates before it writes, and refuses on anything that would fail quietly
+at runtime — an unknown `section_type` (which would silently mis-score a
+session), a `baselineId` with no matching baseline, a baseline-bound exercise
+that still has a fixed load in its sets string, or a `weekdayMap` entry naming a
+day that doesn't exist.
 
 ## Local preview
 
