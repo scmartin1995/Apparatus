@@ -259,6 +259,7 @@ details[open] .section-caret { transform: rotate(180deg); }
 .prog-meta-card { background: var(--c-surface-ctr); border: 1px solid rgba(0,227,253,0.2); border-radius: 1rem; padding: 1.5rem; margin-bottom: 2rem; }
 .prog-meta-label { font-family: var(--font-b); font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.2em; color: var(--c-secondary); margin-bottom: 0.25rem; }
 .prog-meta-name { font-family: var(--font-h); font-weight: 800; font-size: 1.375rem; letter-spacing: -0.025em; color: var(--c-on-surface); margin-bottom: 0.25rem; }
+.prog-locked-badge { display: inline-block; vertical-align: middle; margin-left: 0.5rem; padding: 0.15rem 0.45rem; border: 1px solid var(--c-secondary); border-radius: 4px; font-family: var(--font-b); font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.15em; color: var(--c-secondary); }
 .prog-meta-detail { font-family: var(--font-b); font-size: 0.75rem; color: var(--c-on-surface-v); }
 
 /* ── NO PROGRAM STATE ─────────────────────────────────────── */
@@ -661,6 +662,573 @@ const LS_DRAFT     = 'apparatus_draft';
 const LS_NUDGE     = 'apparatus_nudge_';
 const SESSION_CAP  = 32;
 
+// ── LOCKED PROGRAM ─────────────────────────────────────────
+// Built-in program, bundled with the app so it survives a cleared browser,
+// a new device, or a lost CSV. An imported CSV overrides it; clearing that
+// import falls back here. Mirrored at programs/ar7-hybrid.json.
+const LOCKED_PROGRAM = {
+  "id": "prog-ar7-hybrid",
+  "name": "AR-7 Hybrid Program",
+  "importedAt": "2026-06-12T00:00:00.000Z",
+  "locked": true,
+  "days": [
+    {
+      "id": "off",
+      "label": "OFF DAYS",
+      "day": "Mon–Wed",
+      "sub": "Recovery · Conditioning · Mobility",
+      "accent": "#9B8EE8",
+      "duration": "Optional",
+      "notes": "",
+      "isOff": true,
+      "sections": []
+    },
+    {
+      "id": "push",
+      "label": "PUSH",
+      "day": "Thursday",
+      "sub": "Chest · Shoulders · Triceps",
+      "accent": "#cafd00",
+      "duration": "~65 min",
+      "notes": "Focus on controlled eccentrics on Bench. AR-7 block is chest hypertrophy — keep rest to 15–20 sec.",
+      "isOff": false,
+      "sections": [
+        {
+          "title": "Warm-Up",
+          "icon": "auto_awesome",
+          "type": "warmup",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Band Pull-Aparts",
+              "sets": "2 × 15",
+              "note": "Frontal plane · Scapular retraction · Rear delt counterbalance before pressing",
+              "restSeconds": null
+            },
+            {
+              "name": "DB External Rotation (side-lying)",
+              "sets": "2 × 10 / side",
+              "note": "Transverse plane · Elbow pinned at 90° · Light load · Rotator cuff activation · Pressing involves hidden shoulder rotation — this preps it",
+              "restSeconds": null
+            },
+            {
+              "name": "Bodyweight Dips",
+              "sets": "2 × 10",
+              "note": "Sagittal push primer · Then ramp sets into Bench Press",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Primary Strength",
+          "icon": "fitness_center",
+          "type": "primary",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Barbell Bench Press",
+              "sets": "4 × 4–6",
+              "note": "2–3 min rest · Progress to 220 when hitting 6 across all 4 sets",
+              "restSeconds": null,
+              "baselineId": "bench"
+            },
+            {
+              "name": "Standing Overhead Press",
+              "sets": "3 × 5–6",
+              "note": "2 min rest · Build from 125, earn 130",
+              "restSeconds": null,
+              "baselineId": "ohp"
+            }
+          ]
+        },
+        {
+          "title": "AR-7 Block — Chest Focus",
+          "icon": "diamond",
+          "type": "ar7",
+          "ar7": true,
+          "items": [
+            {
+              "name": "Action: Incline DB Press",
+              "sets": "6–8 reps",
+              "note": "",
+              "restSeconds": null
+            },
+            {
+              "name": "Reaction: DB Fly or Pec Deck",
+              "sets": "12–15 reps",
+              "note": "7 rounds · 15–20 sec rest",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Accessories",
+          "icon": "layers",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Cable Lateral Raises (low pulley)",
+              "sets": "3 × 12–15",
+              "note": "Cable across body · Maintains tension through full arc · No dumbbell momentum",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Micro Arm Add-On — Triceps",
+          "icon": "layers",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Rope Pushdowns or Overhead Cable Extensions",
+              "sets": "3 × 10–12",
+              "note": "~60 sec rest · Add reps first, then load — stop 1–2 reps from failure",
+              "restSeconds": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pull",
+      "label": "PULL",
+      "day": "Friday",
+      "sub": "Back · Rear Delts · Biceps",
+      "accent": "#00e3fd",
+      "duration": "~75 min",
+      "notes": "Prioritize full scapular retraction on rows. Dirty 30s are a rear delt movement — supinated-to-neutral-to-hip curl sequence, no stopping.",
+      "isOff": false,
+      "sections": [
+        {
+          "title": "Warm-Up",
+          "icon": "auto_awesome",
+          "type": "warmup",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Dead Hang",
+              "sets": "2 × 20–30 sec",
+              "note": "Sagittal · Lat in fully lengthened position · Direct pulling prep · Spinal decompression",
+              "restSeconds": null
+            },
+            {
+              "name": "Prone Y Raises",
+              "sets": "2 × 10",
+              "note": "Frontal plane · Lower trap and scapular upward rotation · Bodyweight only",
+              "restSeconds": null
+            },
+            {
+              "name": "Prone T Raises",
+              "sets": "2 × 10",
+              "note": "Transverse plane · Rear delt and external rotators · Then ramp sets into Pull-Ups",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Primary Strength",
+          "icon": "fitness_center",
+          "type": "primary",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Conventional Deadlift",
+              "sets": "3 × 3–5",
+              "note": "3 min rest · Lead lift · Full recovery between sets",
+              "restSeconds": null,
+              "baselineId": "deadlift"
+            },
+            {
+              "name": "Weighted Pull-Ups or Lat Pulldown",
+              "sets": "3 × 5–6",
+              "note": "2 min rest",
+              "restSeconds": null
+            },
+            {
+              "name": "Chest-Supported DB or Machine Row",
+              "sets": "3 × 6–8",
+              "note": "2 min rest · Lumbar demand removed after deadlift",
+              "restSeconds": null,
+              "baselineId": "csrow"
+            }
+          ]
+        },
+        {
+          "title": "AR-7 Block — Back Focus",
+          "icon": "diamond",
+          "type": "ar7",
+          "ar7": true,
+          "items": [
+            {
+              "name": "Action: Single-Arm Cable Row",
+              "sets": "6–8 reps / side",
+              "note": "Constant tension through full ROM · Load maintained at full arm extension · Same stack as Lat Pulldown · No transition",
+              "restSeconds": null
+            },
+            {
+              "name": "Reaction: Straight-Arm Pulldown or Band Pullover",
+              "sets": "12–15 reps",
+              "note": "7 rounds · minimal rest",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Accessories — Rear Delts",
+          "icon": "layers",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Dirty 30s",
+              "sets": "3 × 15",
+              "note": "Supinated ×10 → Neutral ×10 → Hip drive neutral ×10 · Rear delt tri-position protocol",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Micro Arm Add-On — Biceps",
+          "icon": "layers",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Hammer Curl",
+              "sets": "3 × 10–12",
+              "note": "~60 sec rest · Add reps first, then load slowly — stop 1–2 reps from failure",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Finisher",
+          "icon": "flag",
+          "type": "finisher",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Farmer Carries",
+              "sets": "2 × 30–40m",
+              "note": "Week A · ~60 sec rest · Distance before load",
+              "restSeconds": null
+            },
+            {
+              "name": "Landmine Rotations",
+              "sets": "3 × 8–10 / side",
+              "note": "Week B · ~60 sec rest · Velocity-based · Hip-to-shoulder sequence · Load only every 3–4 weeks",
+              "restSeconds": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legs",
+      "label": "LEGS",
+      "day": "Saturday",
+      "sub": "Quads · Hamstrings · Glutes · Core",
+      "accent": "#cafd00",
+      "duration": "~68 min",
+      "notes": "Hip mobility warm-up is mandatory. Squat is the primary mover. RDL covers hip extension; seated leg curl covers knee flexion — both hamstring functions trained every session.",
+      "isOff": false,
+      "sections": [
+        {
+          "title": "Warm-Up",
+          "icon": "auto_awesome",
+          "type": "warmup",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Feet Elevated Side Crunches",
+              "sets": "2 × 5",
+              "note": "Neutral push-up → lateral flexion → back to neutral",
+              "restSeconds": null
+            },
+            {
+              "name": "90/90 Hip Switches",
+              "sets": "2 × 10",
+              "note": "",
+              "restSeconds": null
+            },
+            {
+              "name": "Hip CARs",
+              "sets": "2 × 5 / side",
+              "note": "",
+              "restSeconds": null
+            },
+            {
+              "name": "Pallof Press",
+              "sets": "2 × 10 / side",
+              "note": "Anti-rotation activation · Light-moderate · Then ramp sets into Squat",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Primary Strength",
+          "icon": "fitness_center",
+          "type": "primary",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Back Squat or Safety Bar Squat",
+              "sets": "4 × 3–5",
+              "note": "2–3 min rest · 295 is next target",
+              "restSeconds": null,
+              "baselineId": "squat"
+            },
+            {
+              "name": "Romanian Deadlift",
+              "sets": "3 × 5–6",
+              "note": "2 min rest · Pattern over load · Hamstring hip extension",
+              "restSeconds": null,
+              "baselineId": "rdl"
+            }
+          ]
+        },
+        {
+          "title": "AR-7 Block — Quad Focus",
+          "icon": "diamond",
+          "type": "ar7",
+          "ar7": true,
+          "items": [
+            {
+              "name": "Action: Goblet Squat",
+              "sets": "6–8 reps",
+              "note": "Quad lengthened position · Upright torso · Load secondary to depth and control",
+              "restSeconds": null
+            },
+            {
+              "name": "Reaction: Leg Extension",
+              "sets": "10–12 reps",
+              "note": "7 rounds · 15–20 sec rest · Quad shortened position · Cam machine matches strength curve",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Hamstring Isolation",
+          "icon": "layers",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Seated Leg Curl",
+              "sets": "3 × 10–12",
+              "note": "60 sec rest · Hip flexed = hamstring fully lengthened before curl · Knee flexion pattern · Pairs with RDL hip extension for complete hamstring coverage",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Glute Isolation",
+          "icon": "layers",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Hip Thrust or Cable Pull-Through",
+              "sets": "3 × 12–15",
+              "note": "60 sec rest · Glute shortened position · Pairs with RDL lengthened position for full strength curve coverage",
+              "restSeconds": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arms",
+      "label": "ARMS + LEGS",
+      "day": "Sunday",
+      "sub": "Biceps · Triceps · Unilateral Legs",
+      "accent": "#fce047",
+      "duration": "~69 min",
+      "notes": "Arms are pre-fatigued from the week. BSS is submaximal by design — pattern quality, not new PRs. Hip work lives on Saturday.",
+      "isOff": false,
+      "sections": [
+        {
+          "title": "Warm-Up",
+          "icon": "auto_awesome",
+          "type": "warmup",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Wrist Circles + Forearm Stretch",
+              "sets": "2 × 10 each direction",
+              "note": "",
+              "restSeconds": null
+            },
+            {
+              "name": "Band Pull-Aparts",
+              "sets": "2 × 15",
+              "note": "Shoulder health primer",
+              "restSeconds": null
+            },
+            {
+              "name": "Cable Rope Pushdown (light)",
+              "sets": "1 × 20",
+              "note": "Elbow warm-up",
+              "restSeconds": null
+            },
+            {
+              "name": "EZ-Bar Curl (light)",
+              "sets": "1 × 15",
+              "note": "Then ramp into Close-Grip Bench",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Primary Strength — Triceps",
+          "icon": "fitness_center",
+          "type": "primary",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Close-Grip Bench Press",
+              "sets": "4 × 5–6",
+              "note": "2 min rest · Hit 6 across all 4 to earn next load",
+              "restSeconds": null,
+              "baselineId": "cgbench"
+            }
+          ]
+        },
+        {
+          "title": "Primary Strength — Biceps",
+          "icon": "fitness_center",
+          "type": "primary",
+          "ar7": false,
+          "items": [
+            {
+              "name": "EZ-Bar Curl or Barbell Curl",
+              "sets": "4 × 6–8",
+              "note": "90 sec rest · 3 sec eccentric, no body English · Add reps first (6→8), then +2.5 lb",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "AR-7 Block — Triceps Focus",
+          "icon": "diamond",
+          "type": "ar7",
+          "ar7": true,
+          "items": [
+            {
+              "name": "Action: Overhead Cable Extension",
+              "sets": "8–10 reps",
+              "note": "Long head stretch position · Default to cable; skull crusher if cables unavailable",
+              "restSeconds": null
+            },
+            {
+              "name": "Reaction: Rope Pushdown",
+              "sets": "12–15 reps",
+              "note": "7 rounds · 15–20 sec rest · Lateral head in shortened position",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Superset — Biceps Hypertrophy",
+          "icon": "repeat",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            {
+              "name": "A1: Incline DB Curl",
+              "sets": "3 × 10–12",
+              "note": "Long head · Lengthened position",
+              "restSeconds": null
+            },
+            {
+              "name": "A2: Concentration Curl or Spider Curl",
+              "sets": "3 × 10–12",
+              "note": "60 sec between supersets · Short head peak contraction",
+              "restSeconds": null
+            }
+          ]
+        },
+        {
+          "title": "Unilateral Legs — Quad",
+          "icon": "directions_run",
+          "type": "accessory",
+          "ar7": false,
+          "items": [
+            {
+              "name": "Bulgarian Split Squat",
+              "sets": "3 × 8–10 / leg @ 50–70 lb DBs",
+              "note": "90 sec rest · Submaximal — legs pre-fatigued from Saturday",
+              "restSeconds": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "baselines": [
+    {
+      "id": "bench",
+      "lift": "Bench Press",
+      "orm": 254,
+      "pctLow": 0.827,
+      "pctHigh": 0.846
+    },
+    {
+      "id": "ohp",
+      "lift": "Overhead Press",
+      "orm": 163,
+      "pctLow": 0.767,
+      "pctHigh": 0.798
+    },
+    {
+      "id": "squat",
+      "lift": "Back Squat",
+      "orm": 328,
+      "pctLow": 0.838,
+      "pctHigh": 0.869
+    },
+    {
+      "id": "rdl",
+      "lift": "Romanian Deadlift",
+      "orm": 254,
+      "pctLow": 0.728,
+      "pctHigh": 0.768
+    },
+    {
+      "id": "cgbench",
+      "lift": "Close-Grip Bench",
+      "orm": 200,
+      "pctLow": 0.775,
+      "pctHigh": 0.825
+    },
+    {
+      "id": "deadlift",
+      "lift": "Conventional Deadlift",
+      "orm": 365,
+      "pctLow": 0.82,
+      "pctHigh": 0.87
+    },
+    {
+      "id": "csrow",
+      "lift": "Chest-Supported Row",
+      "orm": 185,
+      "pctLow": 0.72,
+      "pctHigh": 0.78
+    }
+  ],
+  "weekdayMap": [
+    "arms",
+    "off",
+    "off",
+    "off",
+    "push",
+    "pull",
+    "legs"
+  ]
+};
+
 // ── STATE ──────────────────────────────────────────────────
 let PROGRAM  = null;
 let DAYS     = [];
@@ -681,20 +1249,20 @@ function saveProgram(p) {
   try { localStorage.setItem(LS_PROGRAM, JSON.stringify(p)); } catch(e) {}
 }
 function clearProgram() {
+  // Drops the imported override only; baselines stay keyed per program.
   try { localStorage.removeItem(LS_PROGRAM); } catch(e) {}
-  try { localStorage.removeItem(LS_BASELINES); } catch(e) {}
-  PROGRAM = null; DAYS = []; BASELINES = [];
+  initProgramState();
 }
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+function currentProgramId() { return (PROGRAM && PROGRAM.id) || 'none'; }
+function isLockedActive() { return !loadStoredProgram(); }
 function initProgramState() {
-  PROGRAM = loadStoredProgram();
-  if (PROGRAM) {
-    DAYS = PROGRAM.days || [];
-    BASELINES = PROGRAM.baselines || [];
-    const todayId = PROGRAM.weekdayMap ? PROGRAM.weekdayMap[new Date().getDay()] : null;
-    activeDay = todayId || (DAYS[0] ? DAYS[0].id : 'off');
-  } else {
-    DAYS = []; BASELINES = []; activeDay = 'off';
-  }
+  // An imported program overrides the built-in locked program.
+  PROGRAM = loadStoredProgram() || clone(LOCKED_PROGRAM);
+  DAYS = PROGRAM.days || [];
+  BASELINES = PROGRAM.baselines || [];
+  const todayId = PROGRAM.weekdayMap ? PROGRAM.weekdayMap[new Date().getDay()] : null;
+  activeDay = todayId || (DAYS[0] ? DAYS[0].id : 'off');
 }
 
 // ── CSV PARSER ─────────────────────────────────────────────
@@ -850,20 +1418,38 @@ function downloadTemplate() {
 }
 
 // ── BASELINE MANAGEMENT ────────────────────────────────────
+// Overrides live in a { [programId]: [...] } map so switching between the
+// locked program and an imported one doesn't wipe either one's 1RMs.
+function readBaselineMap() {
+  try {
+    const stored = localStorage.getItem(LS_BASELINES);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    if (Array.isArray(parsed)) {
+      // Migrate the legacy flat array onto the active program.
+      const migrated = {}; migrated[currentProgramId()] = parsed;
+      try { localStorage.setItem(LS_BASELINES, JSON.stringify(migrated)); } catch(e) {}
+      return migrated;
+    }
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch(e) { return {}; }
+}
 function loadBaselines() {
   if (!BASELINES || !BASELINES.length) return [];
   try {
-    const stored = localStorage.getItem(LS_BASELINES);
-    if (!stored) return JSON.parse(JSON.stringify(BASELINES));
-    const overrides = JSON.parse(stored);
+    const overrides = readBaselineMap()[currentProgramId()] || [];
     return BASELINES.map(def => {
       const ov = overrides.find(x => x.id === def.id);
       return ov ? Object.assign({}, def, ov) : Object.assign({}, def);
     });
-  } catch(e) { return JSON.parse(JSON.stringify(BASELINES)); }
+  } catch(e) { return clone(BASELINES); }
 }
 function saveBaselines(data) {
-  try { localStorage.setItem(LS_BASELINES, JSON.stringify(data)); } catch(e) {}
+  try {
+    const map = readBaselineMap();
+    map[currentProgramId()] = data;
+    localStorage.setItem(LS_BASELINES, JSON.stringify(map));
+  } catch(e) {}
 }
 
 // ── DAY CLASSIFICATION ─────────────────────────────────────
@@ -1134,11 +1720,11 @@ function renderSessionMode(day) {
     sec.items.forEach((item, ii) => {
       const key = si + '-' + ii;
       const noteHtml = item.note ? '<div class="log-item-note">' + item.note + '</div>' : '';
-      const targetHtml = '<div class="log-item-target">Target: <strong>' + (item.sets||'').replace(/"/g,'&quot;') + '</strong></div>';
+      const targetHtml = '<div class="log-item-target">Target: <strong>' + (displaySets(item)||'').replace(/"/g,'&quot;') + '</strong></div>';
       const header = '<div class="log-item-header"><div class="log-item-name">' + item.name + '</div></div>' + targetHtml;
       if (cat === 'primary') {
         const p = session.primaries[key]; if (!p) return;
-        const hintHtml = weightHintHtml(item.name, item.sets);
+        const hintHtml = weightHintHtml(item.name, item.sets, item.baselineId);
         let setsHtml = '';
         p.sets.forEach((set, idx) => {
           setsHtml += '<div class="log-set-row"><span class="log-set-num">S' + (idx+1) + '</span>' +
@@ -1157,7 +1743,7 @@ function renderSessionMode(day) {
         itemsHtml += '<div class="log-item">' + header + noteHtml + weightHtml + ar7Html + '</div>';
       } else {
         const acc = session.accessories[key]; if (!acc) return;
-        const accHint = getSuggestedWeight(item.name, item.sets);
+        const accHint = getSuggestedWeight(item.name, item.sets, item.baselineId);
         const accHintHtml = accHint ? '<div class="weight-hint"><span class="weight-hint-badge">~' + accHint.weight + ' lb</span><span class="weight-hint-label">suggested</span><span class="weight-hint-source">' + (accHint.source==='baseline'?'from 1RM':'last session') + '</span></div>' : '';
         let setsHtml = '';
         acc.sets.forEach((set, idx) => {
@@ -1555,18 +2141,26 @@ function renderImportPage() {
   if (PROGRAM) {
     const days = DAYS.filter(d => !d.isOff);
     const imported = new Date(PROGRAM.importedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    programCardHtml = '<div class="prog-meta-card"><div class="prog-meta-label">Active Program</div><div class="prog-meta-name">' + PROGRAM.name + '</div><div class="prog-meta-detail">' + days.length + ' training day' + (days.length!==1?'s':'') + ' \xB7 Imported ' + imported + '</div><button class="btn-ghost" style="margin-top:1rem;border-color:rgba(255,115,81,0.3);color:#ff7351" onclick="confirmClearProgram()"><span class="mi mi-sm">delete</span>Clear Program</button></div>';
+    const locked = isLockedActive();
+    const origin = locked ? 'Built-in \xB7 bundled with the app' : 'Imported ' + imported;
+    programCardHtml = '<div class="prog-meta-card">' +
+      '<div class="prog-meta-label">Active Program</div>' +
+      '<div class="prog-meta-name">' + PROGRAM.name + (locked ? '<span class="prog-locked-badge">LOCKED</span>' : '') + '</div>' +
+      '<div class="prog-meta-detail">' + days.length + ' training day' + (days.length!==1?'s':'') + ' \xB7 ' + origin + '</div>' +
+      '<button class="btn-ghost" style="margin-top:1rem;width:100%" onclick="exportProgramJSON()"><span class="mi mi-sm">download</span>Export Program (JSON)</button>' +
+      (locked ? '' : '<button class="btn-ghost" style="margin-top:0.5rem;width:100%;border-color:rgba(255,115,81,0.3);color:#ff7351" onclick="confirmClearProgram()"><span class="mi mi-sm">restore</span>Restore Built-In Program</button>') +
+      '</div>';
   }
   el.innerHTML = programCardHtml +
     '<div class="import-section-title">Import New Program</div>' +
-    '<div class="upload-zone" id="uploadZone"><span class="mi upload-zone-icon">upload_file</span><div class="upload-zone-label">Tap to select CSV</div><div class="upload-zone-sub">or drag and drop</div></div>' +
-    '<input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none"/>' +
+    '<div class="upload-zone" id="uploadZone"><span class="mi upload-zone-icon">upload_file</span><div class="upload-zone-label">Tap to select CSV or JSON</div><div class="upload-zone-sub">or drag and drop</div></div>' +
+    '<input type="file" id="csvFileInput" accept=".csv,.json,text/csv,application/json" style="display:none"/>' +
     '<div id="importStatus" class="import-status"></div>' +
     '<div class="import-section-title">Need a template?</div>' +
     '<button class="btn-ghost" style="width:100%" onclick="downloadTemplate()"><span class="mi mi-sm">download</span>Download CSV Template</button>';
 
   const input = document.getElementById('csvFileInput');
-  input.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleCSVFile(f); });
+  input.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleProgramFile(f); });
 
   const zone = document.getElementById('uploadZone');
   zone.addEventListener('click', () => document.getElementById('csvFileInput').click());
@@ -1574,23 +2168,37 @@ function renderImportPage() {
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', e => {
     e.preventDefault(); zone.classList.remove('drag-over');
-    const f = e.dataTransfer.files[0]; if (f) handleCSVFile(f);
+    const f = e.dataTransfer.files[0]; if (f) handleProgramFile(f);
   });
 }
-function handleCSVFile(file) {
+function handleProgramFile(file) {
   const statusEl = document.getElementById('importStatus');
   statusEl.textContent = 'Reading\u2026'; statusEl.className = 'import-status info';
+  const isJson = /\.json$/i.test(file.name);
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const rows = parseCSV(e.target.result);
-      const programName = file.name.replace(/\.csv$/i,'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-      const program = buildProgramFromCSV(rows, programName);
-      if (!program.days || program.days.length === 0) throw new Error('No valid training days found. Check that day_id column is filled.');
+      let program;
+      if (isJson) {
+        // Round-trips a file produced by Export Program (JSON).
+        program = JSON.parse(e.target.result);
+        if (!program || !Array.isArray(program.days)) throw new Error('Not an Apparatus program export.');
+        program.id = program.id || 'prog-' + Date.now();
+        program.name = program.name || file.name.replace(/\.json$/i,'');
+        program.baselines = program.baselines || [];
+        program.importedAt = new Date().toISOString();
+        if (program.id === LOCKED_PROGRAM.id) program.id = program.id + '-import';
+      } else {
+        const rows = parseCSV(e.target.result);
+        const programName = file.name.replace(/\.csv$/i,'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+        program = buildProgramFromCSV(rows, programName);
+        if (!program.days || program.days.length === 0) throw new Error('No valid training days found. Check that the day column is filled.');
+      }
+      if (!program.days || program.days.length === 0) throw new Error('No valid training days found.');
       saveProgram(program);
-      try { localStorage.removeItem(LS_BASELINES); } catch(e2) {}
       PROGRAM = program; DAYS = program.days; BASELINES = program.baselines;
-      activeDay = DAYS[0] ? DAYS[0].id : 'off';
+      const todayId = program.weekdayMap ? program.weekdayMap[new Date().getDay()] : null;
+      activeDay = todayId || (DAYS[0] ? DAYS[0].id : 'off');
       statusEl.textContent = '\u2713 ' + program.name + ' imported \u2014 ' + DAYS.filter(d=>!d.isOff).length + ' training day' + (DAYS.filter(d=>!d.isOff).length!==1?'s':'') + ' loaded.';
       statusEl.className = 'import-status success';
       setTimeout(() => { closeImportPage(); render(); renderBaselines(); }, 1200);
@@ -1603,8 +2211,20 @@ function handleCSVFile(file) {
   reader.readAsText(file);
 }
 window.confirmClearProgram = function() {
-  if (!confirm('Clear the current program? Session history will be preserved.')) return;
+  if (!confirm('Restore the built-in ' + LOCKED_PROGRAM.name + '? The imported program is removed. Session history and 1RM baselines are kept.')) return;
   clearProgram(); renderImportPage(); render(); renderBaselines();
+};
+
+// Dumps the active program, with current 1RMs folded in, as a re-importable file.
+window.exportProgramJSON = function() {
+  if (!PROGRAM) return;
+  const out = Object.assign({}, PROGRAM, { baselines: loadBaselines() });
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = (slugify(PROGRAM.name) || 'apparatus-program') + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 };
 
 // ── RENDER: NO PROGRAM STATE ───────────────────────────────
@@ -1665,8 +2285,7 @@ function render() {
     const titleStyle = isAr7 ? 'style="color:' + day.accent + '"' : '';
     const borderStyle = isAr7 ? 'style="border-left-color:' + day.accent + '"' : '';
     const itemsHtml = sec.items.map(item => {
-      const b = item.baselineId ? baselines.find(x => x.id === item.baselineId) : null;
-      const setsStr = b && b.orm > 0 ? item.sets + ' @ ' + workingRange(b.orm,b.pctLow,b.pctHigh) : item.sets;
+      const setsStr = displaySets(item, baselines);
       return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + item.name + '</div>' + (item.note?'<div class="section-item-note">'+item.note+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + setsStr + '</span></div>';
     }).join('');
     return '<details class="section-accordion' + (isAr7?' ar7':'') + '" ' + (isOpen?'open':'') + ' ' + borderStyle + '><summary class="section-summary" data-key="' + key + '" onclick="toggleSection(\'' + key + '\',event)"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + sec.title + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
@@ -1687,8 +2306,7 @@ function renderOffDays(day) {
     const sectionsHtml = day.sections.map((sec, si) => {
       const isAr7 = !!sec.ar7;
       const itemsHtml = sec.items.map(item => {
-        const b = item.baselineId ? baselines.find(x => x.id === item.baselineId) : null;
-        const setsStr = b && b.orm > 0 ? item.sets + ' @ ' + workingRange(b.orm,b.pctLow,b.pctHigh) : item.sets;
+        const setsStr = displaySets(item, baselines);
         return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + item.name + '</div>' + (item.note?'<div class="section-item-note">'+item.note+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + setsStr + '</span></div>';
       }).join('');
       const borderStyle = isAr7 ? 'style="border-left-color:' + day.accent + '"' : '';
@@ -1753,10 +2371,20 @@ function repToPercent(reps) {
   return 0.60;
 }
 // Returns { weight: number, source: 'baseline'|'history' } or null
-function getSuggestedWeight(exerciseName, setsStr) {
+function getSuggestedWeight(exerciseName, setsStr, baselineId) {
   const nameSlug = slugify(exerciseName);
-  // 1. Try baseline match by slugified name
   const baselines = loadBaselines();
+  // 1. A baseline the item is explicitly bound to wins, and uses that
+  // baseline's own percentages so the hint agrees with the target range
+  // rather than the generic rep curve.
+  if (baselineId) {
+    const bound = baselines.find(x => x.id === baselineId);
+    if (bound && bound.orm > 0) {
+      const mid = bound.orm * (bound.pctLow + bound.pctHigh) / 2;
+      return { weight: Math.round(mid / 2.5) * 2.5, source: 'baseline' };
+    }
+  }
+  // 2. Otherwise fall back to a baseline whose name matches the exercise.
   const b = baselines.find(x => slugify(x.lift) === nameSlug || x.id === nameSlug);
   if (b && b.orm > 0) {
     const parsed = parseSetsStr(setsStr);
@@ -1785,11 +2413,22 @@ function getSuggestedWeight(exerciseName, setsStr) {
   }
   return null;
 }
-function weightHintHtml(exerciseName, setsStr) {
-  const s = getSuggestedWeight(exerciseName, setsStr);
+function weightHintHtml(exerciseName, setsStr, baselineId) {
+  const s = getSuggestedWeight(exerciseName, setsStr, baselineId);
   if (!s) return '';
   const sourceLabel = s.source === 'baseline' ? 'from 1RM' : 'last session';
   return '<div class="weight-hint"><span class="weight-hint-badge">~' + s.weight + ' lb</span><span class="weight-hint-label">suggested</span><span class="weight-hint-source">' + sourceLabel + '</span></div>';
+}
+// An item bound to a baseline shows its load live, so raising the 1RM raises
+// the prescribed weight everywhere the item is displayed.
+function baselineFor(item, baselines) {
+  if (!item || !item.baselineId) return null;
+  const b = (baselines || loadBaselines()).find(x => x.id === item.baselineId);
+  return (b && b.orm > 0) ? b : null;
+}
+function displaySets(item, baselines) {
+  const b = baselineFor(item, baselines);
+  return b ? item.sets + ' @ ' + workingRange(b.orm, b.pctLow, b.pctHigh) : item.sets;
 }
 function workingRange(orm, lo, hi) { const a=Math.round(orm*lo/2.5)*2.5, b=Math.round(orm*hi/2.5)*2.5; return a===b ? a+' lb' : a+'\u2013'+b+' lb'; }
 function fmtTime(s) { const m=Math.floor(s/60),sec=s%60; return m+':'+(sec<10?'0':'')+sec; }

@@ -1,7 +1,7 @@
 {
   "name": "Apparatus",
   "short_name": "Apparatus",
-  "description": "CSV-driven training program tracker",
+  "description": "Training program tracker with a built-in program and CSV/JSON import",
   "start_url": ".",
   "scope": "./",
   "display": "standalone",
