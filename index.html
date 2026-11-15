@@ -315,6 +315,18 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .log-item-target strong { color: var(--c-primary-ctr); }
 .bw-toggle { flex-shrink: 0; padding: 4px 10px; border-radius: 999px; background: var(--c-surface-ctr); border: 1px solid rgba(72,72,71,0.4); font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; letter-spacing: 0.1em; color: var(--c-on-surface-v); cursor: pointer; }
 .bw-toggle.on { background: rgba(0,227,253,0.12); border-color: var(--c-secondary); color: var(--c-secondary); }
+.log-set-row.pr-set .log-input { border-color: #fce047; color: #fce047; }
+.log-set-row.pr-set .log-set-num { color: #fce047; }
+.log-set-row.pr-set::after { content: 'PR'; flex-shrink: 0; font-family: var(--font-h); font-weight: 800; font-size: 0.5625rem; letter-spacing: 0.08em; color: #0e0e0e; background: #fce047; border-radius: 4px; padding: 2px 5px; }
+.pr-box { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(252,224,71,0.08); border: 1px solid rgba(252,224,71,0.35); }
+.pr-icon { color: #fce047; flex-shrink: 0; }
+.pr-text { flex: 1; min-width: 0; }
+.pr-title { font-family: var(--font-h); font-weight: 800; font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: #fce047; }
+.pr-detail { font-family: var(--font-b); font-size: 0.75rem; color: var(--c-on-surface-v); margin-top: 2px; }
+.pr-detail strong { color: var(--c-on-surface); }
+.pr-was { opacity: 0.7; }
+.pr-btn { flex-shrink: 0; padding: 8px 12px; border-radius: 999px; border: none; background: #fce047; color: #0e0e0e; font-family: var(--font-h); font-weight: 800; font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.pr-done { flex-shrink: 0; font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; letter-spacing: 0.08em; text-transform: uppercase; color: #fce047; }
 .last-time { font-family: var(--font-h); font-size: 0.6875rem; color: var(--c-on-surface-v); letter-spacing: 0.04em; margin-top: 4px; }
 .last-time strong { color: #00e3fd; font-weight: 700; }
 .log-item .last-time { margin: 2px 0 8px; }
@@ -2185,6 +2197,73 @@ window.toggleBodyweight = function(key) {
   saveDraft(); render();
 };
 
+// ── PERSONAL RECORDS ───────────────────────────────────────
+// A set is a PR when its estimated 1RM beats what the lift started the
+// session at: its 1RM baseline if it has one, otherwise the best estimate in
+// history. Estimates past 12 reps are too loose to count.
+const PR_MAX_REPS = 12;
+function setOrm(set) {
+  const w = parseFloat(set.weight), r = parseInt(set.reps);
+  return (w > 0 && r >= 1 && r <= PR_MAX_REPS) ? calcOrm(w, r) : 0;
+}
+function liftBaseline(item, baselines) {
+  const list = baselines || loadBaselines(), slug = slugify(item.name || '');
+  return (item.baselineId && list.find(x => x.id === item.baselineId)) ||
+    list.find(x => slugify(x.lift || '') === slug || x.id === slug) || null;
+}
+function historyBestOrm(name, all) {
+  const slug = slugify(name || '');
+  let best = 0;
+  (all || getAllSessions()).forEach(s => {
+    [s.primaries || {}, s.accessories || {}].forEach(group => {
+      for (const k in group) {
+        const it = group[k];
+        if (it.bw || !it.sets || slugify(it.name || '') !== slug) continue;
+        it.sets.forEach(st => { best = Math.max(best, setOrm(st)); });
+      }
+    });
+  });
+  return best;
+}
+function sessionItem(key) {
+  const day = session && DAYS.find(d => d.id === session.dayType), at = String(key).split('-');
+  const sec = day && day.sections[at[0]];
+  return (sec && sec.items[at[1]]) || null;
+}
+function prInfo(key, item) {
+  const entry = session && (session.primaries[key] || session.accessories[key]);
+  if (!entry || entry.bw || !item) return null;
+  const b = liftBaseline(item);
+  // Fixed for the session, so a set stays marked after the 1RM is updated.
+  if (typeof entry.prBase !== 'number') entry.prBase = (b && b.orm > 0) ? b.orm : historyBestOrm(item.name);
+  const orms = entry.sets.map(setOrm), best = Math.max.apply(null, orms.concat(0));
+  const flags = orms.map(o => entry.prBase > 0 && o > entry.prBase);
+  return { entry: entry, baseline: b, best: best, flags: flags, isPr: flags.some(Boolean), canUpdate: !!b && best > b.orm };
+}
+function prBoxHtml(key, info) {
+  if (!info || (!info.isPr && !info.canUpdate)) return '';
+  const detail = 'Est. 1RM <strong>' + info.best + ' lb</strong>' + (info.isPr ? ' <span class="pr-was">\xB7 was ' + info.entry.prBase + '</span>' : '');
+  let action = '';
+  if (info.canUpdate) action = '<button class="pr-btn" onclick="applyPr(\'' + key + '\')">' + (info.baseline.orm > 0 ? 'Update 1RM' : 'Set 1RM') + '</button>';
+  else if (info.baseline && info.isPr) action = '<span class="pr-done">1RM updated</span>';
+  return '<div class="pr-box"><span class="mi mi-fill pr-icon">emoji_events</span><div class="pr-text"><div class="pr-title">' + (info.isPr ? 'New PR' : 'No 1RM set yet') + '</div><div class="pr-detail">' + detail + '</div></div>' + action + '</div>';
+}
+// Updates the marks in place while typing, without re-rendering the inputs.
+function refreshPr(key) {
+  const info = prInfo(key, sessionItem(key));
+  const box = document.getElementById('pr-' + key);
+  if (box) box.innerHTML = prBoxHtml(key, info);
+  document.querySelectorAll('[data-pr-key="' + key + '"]').forEach((row, i) => row.classList.toggle('pr-set', !!(info && info.flags[i])));
+}
+window.applyPr = function(key) {
+  const info = prInfo(key, sessionItem(key));
+  if (!info || !info.canUpdate) return;
+  const data = loadBaselines(), b = data.find(x => x.id === info.baseline.id);
+  if (!b) return;
+  b.orm = info.best;
+  saveBaselines(data); saveDraft(); renderBaselines(); render();
+};
+
 // ── SESSION INIT ───────────────────────────────────────────
 function initSession(dayType) {
   const day = DAYS.find(d => d.id === dayType);
@@ -2405,7 +2484,7 @@ function finishSession() {
 // ── LOGGING INPUT HANDLERS ─────────────────────────────────
 window.updatePrimarySet = function(key, idx, field, val) {
   if (!session || !session.primaries[key]) return;
-  session.primaries[key].sets[idx][field] = val; saveDraft();
+  session.primaries[key].sets[idx][field] = val; refreshPr(key); saveDraft();
   const inp = event && event.target;
   if (inp) {
     if ((session.primaries[key].sets[idx].weight || session.primaries[key].bw) && session.primaries[key].sets[idx].reps) {
@@ -2415,7 +2494,7 @@ window.updatePrimarySet = function(key, idx, field, val) {
 };
 window.updateAccessorySet = function(key, idx, field, val) {
   if (!session || !session.accessories[key]) return;
-  session.accessories[key].sets[idx][field] = val; saveDraft();
+  session.accessories[key].sets[idx][field] = val; refreshPr(key); saveDraft();
   const inp = event && event.target;
   if (inp) inp.classList.toggle('filled', !!val);
 };
@@ -2459,14 +2538,15 @@ function renderSessionMode(day) {
         const p = session.primaries[key]; if (!p) return;
         const hintHtml = p.bw ? '' : weightHintHtml(item.name, item.sets, item.baselineId);
         let setsHtml = '';
+        const pr = prInfo(key, item);
         p.sets.forEach((set, idx) => {
-          setsHtml += '<div class="log-set-row"><span class="log-set-num">S' + (idx+1) + '</span>' +
+          setsHtml += '<div class="log-set-row' + (pr && pr.flags[idx] ? ' pr-set' : '') + '" data-pr-key="' + key + '"><span class="log-set-num">S' + (idx+1) + '</span>' +
             '<input class="log-input ' + (set.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="' + (p.bw?'BW +':'lb') + '" value="' + (set.weight||'') + '" oninput="updatePrimarySet(\'' + key + '\',' + idx + ',\'weight\',this.value)"/>' +
             '<span class="log-input-x">\xD7</span>' +
             '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updatePrimarySet(\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
             '</div>';
         });
-        itemsHtml += '<div class="log-item">' + header + noteHtml + hintHtml + '<div class="log-sets">' + setsHtml + '</div></div>';
+        itemsHtml += '<div class="log-item">' + header + noteHtml + hintHtml + '<div class="log-sets">' + setsHtml + '</div><div id="pr-' + key + '">' + prBoxHtml(key, pr) + '</div></div>';
       } else if (cat === 'ar7') {
         const a = session.ar7[key]; if (!a) return;
         let dotsHtml = '';
@@ -2479,8 +2559,9 @@ function renderSessionMode(day) {
         const accHint = acc.bw ? null : getSuggestedWeight(item.name, item.sets, item.baselineId);
         const accHintHtml = accHint ? '<div class="weight-hint"><span class="weight-hint-badge">~' + accHint.weight + ' lb</span><span class="weight-hint-label">suggested</span><span class="weight-hint-source">' + (accHint.source==='baseline'?'from 1RM':'last session') + '</span></div>' : '';
         let setsHtml = '';
+        const pr = prInfo(key, item);
         acc.sets.forEach((set, idx) => {
-          setsHtml += '<div class="log-set-row"><span class="log-set-num">S' + (idx+1) + '</span>' +
+          setsHtml += '<div class="log-set-row' + (pr && pr.flags[idx] ? ' pr-set' : '') + '" data-pr-key="' + key + '"><span class="log-set-num">S' + (idx+1) + '</span>' +
             '<input class="log-input ' + (set.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="' + (acc.bw?'BW +':'lb') + '" value="' + (set.weight||'') + '" oninput="updateAccessorySet(\'' + key + '\',' + idx + ',\'weight\',this.value)"/>' +
             '<span class="log-input-x">\xD7</span>' +
             '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updateAccessorySet(\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
@@ -2489,7 +2570,7 @@ function renderSessionMode(day) {
         let rpeDots = '';
         for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" onclick="setAccessoryRpe(\'' + key + '\',' + r + ')">' + r + '</button>';
         const rpeHtml = '<div class="log-rpe"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div>';
-        itemsHtml += '<div class="log-item">' + header + noteHtml + accHintHtml + '<div class="log-sets">' + setsHtml + '</div>' + rpeHtml + '</div>';
+        itemsHtml += '<div class="log-item">' + header + noteHtml + accHintHtml + '<div class="log-sets">' + setsHtml + '</div><div id="pr-' + key + '">' + prBoxHtml(key, pr) + '</div>' + rpeHtml + '</div>';
       }
     });
     bodyHtml += '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '>' +
