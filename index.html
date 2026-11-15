@@ -1809,7 +1809,7 @@ function loadStoredProgram() {
   try { const s = localStorage.getItem(LS_PROGRAM); return s ? JSON.parse(s) : null; } catch(e) { return null; }
 }
 function saveProgram(p) {
-  try { localStorage.setItem(LS_PROGRAM, JSON.stringify(p)); } catch(e) {}
+  try { localStorage.setItem(LS_PROGRAM, JSON.stringify(p)); return true; } catch(e) { return false; }
 }
 function clearProgram() {
   // Drops the imported override only; baselines stay keyed per program.
@@ -1829,7 +1829,7 @@ function safeId(v, fallback) {
   return /^[A-Za-z0-9_-]+$/.test(t) ? t : (slugify(t) || fallback);
 }
 function sanitizeProgram(p) {
-  if (!p || typeof p !== 'object') return null;
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
   const str = v => (v == null ? '' : String(v));
   const objs = a => (Array.isArray(a) ? a : []).filter(x => x && typeof x === 'object');
   const dayIds = {};
@@ -1877,11 +1877,15 @@ function selectedBuiltIn() {
   try { id = localStorage.getItem(LS_BUILTIN); } catch(e) {}
   return builtInById(id) || BUILT_IN_PROGRAMS[0] || null;
 }
-function isLockedActive() { return !loadStoredProgram(); }
+// The imported program, if there is a usable one. Anything malformed is
+// treated as absent so the app falls back to a built-in instead of crashing.
+function storedProgram() {
+  try { const p = sanitizeProgram(loadStoredProgram()); return (p && p.days.length) ? p : null; } catch(e) { return null; }
+}
+function isLockedActive() { return !storedProgram(); }
 function initProgramState() {
   // An imported program overrides the selected built-in.
-  const stored = sanitizeProgram(loadStoredProgram());
-  const base = (stored && stored.days.length ? stored : null) || selectedBuiltIn();
+  const base = storedProgram() || selectedBuiltIn();
   PROGRAM = base ? clone(base) : null;
   if (!PROGRAM) { DAYS = []; BASELINES = []; activeDay = 'off'; return; }
   DAYS = PROGRAM.days || [];
@@ -2069,10 +2073,17 @@ function restoreBackup(backup) {
   let n = 0;
   try { n = JSON.parse(backup.data[LS_SESSIONS] || '[]').length; } catch(e) {}
   if (!confirm('Restore this backup (' + n + ' session' + (n === 1 ? '' : 's') + ')? It replaces the program, 1RMs and history on this device.')) return false;
-  const old = [];
-  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('apparatus_') === 0) old.push(k); }
-  old.forEach(k => localStorage.removeItem(k));
-  keys.forEach(k => localStorage.setItem(k, backup.data[k]));
+  const old = {};
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('apparatus_') === 0) old[k] = localStorage.getItem(k); }
+  Object.keys(old).forEach(k => localStorage.removeItem(k));
+  try {
+    keys.forEach(k => localStorage.setItem(k, backup.data[k]));
+  } catch(e) {
+    // Put back what was there rather than leave the device half-restored.
+    keys.forEach(k => { try { localStorage.removeItem(k); } catch(x) {} });
+    Object.keys(old).forEach(k => { try { localStorage.setItem(k, old[k]); } catch(x) {} });
+    throw new Error('browser storage is full, so the backup could not be restored. Nothing was changed.');
+  }
   location.reload();
   return true;
 }
@@ -2900,7 +2911,7 @@ function renderImportPage() {
     '<button class="btn-ghost" style="width:100%" onclick="downloadTemplate()"><span class="mi mi-sm">download</span>Download CSV Template</button>';
 
   const input = document.getElementById('csvFileInput');
-  input.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleProgramFile(f); });
+  input.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) handleProgramFile(f); });
 
   const zone = document.getElementById('uploadZone');
   zone.addEventListener('click', () => document.getElementById('csvFileInput').click());
@@ -2952,7 +2963,7 @@ function handleProgramFile(file) {
       // Keep an imported copy from colliding with a built-in's baselines.
       if (builtInById(program.id)) program.id = program.id + '-import';
       const prevBaselines = loadBaselines();
-      saveProgram(program);
+      if (!saveProgram(program)) throw new Error('browser storage is full or unavailable, so the program could not be saved.');
       PROGRAM = program; DAYS = program.days; BASELINES = program.baselines;
       const todayId = program.weekdayMap ? program.weekdayMap[new Date().getDay()] : null;
       activeDay = todayId || (DAYS[0] ? DAYS[0].id : 'off');
