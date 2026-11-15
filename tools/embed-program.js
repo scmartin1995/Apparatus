@@ -15,7 +15,9 @@ const ROOT = path.resolve(__dirname, '..');
 const HTML = path.join(ROOT, 'index.html');
 const DIR = path.join(ROOT, 'programs');
 const START = 'const BUILT_IN_PROGRAMS = ';
-const END = ';\r\n\r\n// ── STATE';
+// Matches either line ending: the file is LF in git but CRLF in a Windows
+// checkout with autocrlf.
+const END = /;\r?\n\r?\n\/\/ ── STATE/;
 
 // section.type drives session scoring, so a typo here silently mis-scores a
 // session rather than failing loudly. Check it at author time instead.
@@ -90,10 +92,13 @@ if (JSON.stringify(clean).indexOf('</') !== -1) throw new Error('program data co
 
 let src = fs.readFileSync(HTML, 'utf8');
 const from = src.indexOf(START);
-const to = src.indexOf(END, from);
-if (from === -1 || to === -1) throw new Error('BUILT_IN_PROGRAMS block not found in index.html');
+const endAt = from === -1 ? -1 : src.slice(from).search(END);
+if (from === -1 || endAt === -1) throw new Error('BUILT_IN_PROGRAMS block not found in index.html');
+const to = from + endAt;
 
-const body = JSON.stringify(clean, null, 2).split('\n').join('\r\n');
+// Write the block in whatever line ending the file already uses.
+const eol = src.indexOf('\r\n') !== -1 ? '\r\n' : '\n';
+const body = JSON.stringify(clean, null, 2).split('\n').join(eol);
 const next = src.slice(0, from) + START + body + src.slice(to);
 
 if (next === src) console.log('already in sync');

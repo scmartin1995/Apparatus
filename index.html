@@ -2042,7 +2042,7 @@ function parseSetsStr(setsStr) {
 // ── SESSION INIT ───────────────────────────────────────────
 function initSession(dayType) {
   const day = DAYS.find(d => d.id === dayType);
-  const s = { dayType, startTime: Date.now(), primaries: {}, ar7: {}, accessories: {}, feel: null };
+  const s = { dayType, programId: currentProgramId(), startTime: Date.now(), primaries: {}, ar7: {}, accessories: {}, feel: null };
   if (!day || !day.sections) return s;
   day.sections.forEach((sec, si) => {
     const cat = classifySection(sec);
@@ -2131,6 +2131,13 @@ function computeScore(s) {
   if (ar7 !== null && acc !== null) h = ar7 * 0.65 + acc * 0.35;
   else if (ar7 !== null) h = ar7;
   else if (acc !== null) h = acc;
+  // A component the day doesn't have can't be earned, so hand its weight to
+  // the other one instead of capping the session below 100. Work that was
+  // programmed but not logged still counts as zero.
+  const hasPrimary = Object.keys(s.primaries || {}).length > 0;
+  const hasHyper = Object.keys(s.ar7 || {}).length + Object.keys(s.accessories || {}).length > 0;
+  if (!hasPrimary && hasHyper) { wH += wP; wP = 0; }
+  else if (hasPrimary && !hasHyper) { wP += wH; wH = 0; }
   const f = scoreFeel(s), pN = p === null ? 0 : p;
   return {
     total: Math.round(pN * wP + h * wH + f * wF),
@@ -2757,8 +2764,17 @@ function renderImportPage() {
     const f = e.dataTransfer.files[0]; if (f) handleProgramFile(f);
   });
 }
+// A session's entries are keyed by section/item position in the program it
+// was started on, so the program can't change underneath it.
+const SESSION_LOCK_MSG = 'Finish or discard the active session before changing programs.';
+function programLockedBySession() {
+  if (!session) return false;
+  alert(SESSION_LOCK_MSG);
+  return true;
+}
 function handleProgramFile(file) {
   const statusEl = document.getElementById('importStatus');
+  if (session) { statusEl.textContent = '✕ ' + SESSION_LOCK_MSG; statusEl.className = 'import-status error'; return; }
   statusEl.textContent = 'Reading\u2026'; statusEl.className = 'import-status info';
   const isJson = /\.json$/i.test(file.name);
   const reader = new FileReader();
@@ -2798,6 +2814,7 @@ function handleProgramFile(file) {
   reader.readAsText(file);
 }
 window.confirmClearProgram = function() {
+  if (programLockedBySession()) return;
   const back = selectedBuiltIn();
   if (!confirm('Restore ' + (back ? back.name : 'the built-in program') + '? The imported program is removed. Session history and 1RM baselines are kept.')) return;
   clearProgram(); renderImportPage(); render(); renderBaselines();
@@ -2806,6 +2823,7 @@ window.confirmClearProgram = function() {
 window.selectBuiltIn = function(id) {
   const p = builtInById(id);
   if (!p) return;
+  if (programLockedBySession()) return;
   // Picking a built-in drops any imported program, so say so first.
   if (loadStoredProgram() && !confirm('Switch to ' + p.name + '? The imported program will be removed. Session history and 1RM baselines are kept.')) return;
   try { localStorage.setItem(LS_BUILTIN, id); } catch(e) {}
@@ -3047,7 +3065,7 @@ function calculate() {
 
 // ── TIMER ──────────────────────────────────────────────────
 const CIRC = 219.9;
-let timerTotal=90, timerRemaining=90, timerInterval=null, timerState='idle', timerPanelOpen=false;
+let timerTotal=90, timerRemaining=90, timerEndAt=0, timerInterval=null, timerState='idle', timerPanelOpen=false;
 const arcEl=document.getElementById('timerArc'), displayEl=document.getElementById('timerDisplay'), statusEl=document.getElementById('timerStatus'), bubbleEl=document.getElementById('timerBubble');
 function getAccent() { const d = DAYS.find(d => d.id===activeDay); return d ? d.accent : '#cafd00'; }
 function updateTimerDisplay() {
@@ -3077,9 +3095,22 @@ function startTimer() {
   if (timerRemaining<=0) timerRemaining=timerTotal;
   timerState='running';
   try { if (!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); } catch(e) {}
-  timerInterval=setInterval(() => { timerRemaining--; if(timerRemaining<=0){ clearInterval(timerInterval); timerRemaining=0; timerState='done'; if(navigator.vibrate)navigator.vibrate([200,100,200]); playChime(); hidePanelIfOpen(); } updateTimerDisplay(); }, 1000);
+  // Count against the clock, not ticks: intervals are throttled or suspended
+  // when the phone locks or the app is backgrounded.
+  timerEndAt=Date.now()+timerRemaining*1000;
+  clearInterval(timerInterval);
+  timerInterval=setInterval(tickTimer, 250);
   updateTimerDisplay();
 }
+function tickTimer() {
+  if (timerState!=='running') return;
+  const left=Math.max(0, Math.ceil((timerEndAt-Date.now())/1000));
+  if (left===timerRemaining && left>0) return;
+  timerRemaining=left;
+  if(timerRemaining<=0){ clearInterval(timerInterval); timerState='done'; if(navigator.vibrate)navigator.vibrate([200,100,200]); playChime(); hidePanelIfOpen(); }
+  updateTimerDisplay();
+}
+document.addEventListener('visibilitychange', () => { if(!document.hidden) tickTimer(); });
 function resetTimer() { clearInterval(timerInterval); timerState='idle'; timerRemaining=timerTotal; hidePanelIfOpen(); updateTimerDisplay(); }
 function stopTimer() { clearInterval(timerInterval); timerState='paused'; hidePanelIfOpen(); updateTimerDisplay(); }
 function hidePanelIfOpen() { if(timerPanelOpen){ timerPanelOpen=false; document.getElementById('timerPanel').classList.remove('show'); } }
@@ -3187,7 +3218,8 @@ render = function() { _origRender(); requestAnimationFrame(syncLayoutVars); };
   const draft = loadDraft();
   if (!draft || !draft.dayType) return;
   const day = DAYS.find(d => d.id === draft.dayType);
-  if (!day) { clearDraft(); return; }
+  // A draft from another program would map its entries onto the wrong lifts.
+  if (!day || (draft.programId && draft.programId !== currentProgramId())) { clearDraft(); return; }
   const mins = Math.floor((Date.now() - draft.startTime) / 60000);
   const timeStr = mins < 60 ? mins + ' min ago' : Math.floor(mins/60) + 'h ' + (mins%60) + 'm ago';
   document.getElementById('draftModalTitle').textContent = 'Resume ' + day.label + '?';
