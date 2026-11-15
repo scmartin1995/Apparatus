@@ -76,6 +76,8 @@ the app writes the same file. Columns:
 
 `section_type` drives scoring: `warmup` rows aren't logged, `primary` scores on
 load and reps, `ar7` on rounds completed, everything else on sets and RPE.
+Programmed work that isn't logged scores zero, so skipping sets or exercises
+lowers the score.
 
 A CSV can't express day colors, durations, weekday scheduling, or 1RM values —
 the app fills those in. Use JSON if you need them preserved.

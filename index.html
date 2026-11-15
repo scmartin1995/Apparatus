@@ -675,7 +675,7 @@ const LS_NUDGE     = 'apparatus_nudge_';
 const LS_BUILTIN   = 'apparatus_builtin';
 const LS_TIMER     = 'apparatus_timer';
 const LS_BW        = 'apparatus_bodyweight';
-const SESSION_CAP  = 32;
+const SESSION_CAP  = 400;
 
 // ── BUILT-IN PROGRAMS ─────────────────────────────────────────
 // Bundled with the app so they survive a cleared browser, a new device or a
@@ -1817,6 +1817,52 @@ function clearProgram() {
   initProgramState();
 }
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
+// Program text is user-supplied (CSV/JSON import), so it is escaped wherever
+// it is written into HTML.
+function esc(v) {
+  return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// Ids, colors and icon names end up inside attributes and inline handlers,
+// so an imported program is normalised once here instead of at every use.
+function safeId(v, fallback) {
+  const t = String(v == null ? '' : v);
+  return /^[A-Za-z0-9_-]+$/.test(t) ? t : (slugify(t) || fallback);
+}
+function sanitizeProgram(p) {
+  if (!p || typeof p !== 'object') return null;
+  const str = v => (v == null ? '' : String(v));
+  const objs = a => (Array.isArray(a) ? a : []).filter(x => x && typeof x === 'object');
+  const dayIds = {};
+  p.id = safeId(p.id, 'prog-import');
+  p.name = str(p.name) || 'Program';
+  p.days = objs(p.days).map((d, i) => {
+    const id = safeId(d.id, 'day-' + (i + 1));
+    dayIds[str(d.id)] = id; d.id = id;
+    d.label = str(d.label) || id.toUpperCase();
+    d.day = str(d.day); d.sub = str(d.sub); d.notes = str(d.notes); d.duration = str(d.duration);
+    d.accent = /^#[0-9a-fA-F]{3,8}$/.test(d.accent) ? d.accent : '#cafd00';
+    d.sections = objs(d.sections).map(sec => {
+      sec.title = str(sec.title) || 'General';
+      sec.type = str(sec.type);
+      sec.icon = /^[a-z0-9_]+$/.test(sec.icon) ? sec.icon : iconForType(sec.type);
+      sec.items = objs(sec.items).map(it => {
+        it.name = str(it.name); it.sets = str(it.sets); it.note = str(it.note);
+        if (it.baselineId != null) it.baselineId = safeId(it.baselineId, '');
+        return it;
+      });
+      return sec;
+    });
+    return d;
+  });
+  p.baselines = objs(p.baselines).map(b => {
+    b.id = safeId(b.id, 'lift'); b.lift = str(b.lift) || b.id;
+    b.orm = Number(b.orm) || 0; b.pctLow = Number(b.pctLow) || 0.80; b.pctHigh = Number(b.pctHigh) || 0.85;
+    return b;
+  });
+  p.weekdayMap = (Array.isArray(p.weekdayMap) && p.weekdayMap.length === 7)
+    ? p.weekdayMap.map(id => dayIds[str(id)] || safeId(id, '')) : null;
+  return p;
+}
 function currentProgramId() { return (PROGRAM && PROGRAM.id) || 'none'; }
 function builtInById(id) {
   for (let i = 0; i < BUILT_IN_PROGRAMS.length; i++) {
@@ -1834,7 +1880,8 @@ function selectedBuiltIn() {
 function isLockedActive() { return !loadStoredProgram(); }
 function initProgramState() {
   // An imported program overrides the selected built-in.
-  const base = loadStoredProgram() || selectedBuiltIn();
+  const stored = sanitizeProgram(loadStoredProgram());
+  const base = (stored && stored.days.length ? stored : null) || selectedBuiltIn();
   PROGRAM = base ? clone(base) : null;
   if (!PROGRAM) { DAYS = []; BASELINES = []; activeDay = 'off'; return; }
   DAYS = PROGRAM.days || [];
@@ -1945,7 +1992,8 @@ function buildProgramFromCSV(rows, programName) {
   });
 
   return {
-    id: 'prog-' + Date.now(), name: programName,
+    // Stable per file name, so re-importing an edited CSV keeps its 1RMs.
+    id: 'prog-' + (slugify(programName) || Date.now()), name: programName,
     importedAt: new Date().toISOString(),
     days: dayOrder.map(id => dayMap[id]),
     baselines: Object.values(baselineMap),
@@ -2018,15 +2066,34 @@ function loadBaselines() {
     const overrides = readBaselineMap()[currentProgramId()] || [];
     return BASELINES.map(def => {
       const ov = overrides.find(x => x.id === def.id);
-      return ov ? Object.assign({}, def, ov) : Object.assign({}, def);
+      // Only the 1RM is the user's; names and percentages follow the program.
+      return (ov && typeof ov.orm === 'number') ? Object.assign({}, def, { orm: ov.orm }) : Object.assign({}, def);
     });
   } catch(e) { return clone(BASELINES); }
 }
 function saveBaselines(data) {
   try {
     const map = readBaselineMap();
-    map[currentProgramId()] = data;
+    map[currentProgramId()] = data
+      .filter(b => { const def = BASELINES.find(x => x.id === b.id); return !def || def.orm !== b.orm; })
+      .map(b => ({ id: b.id, orm: b.orm }));
     localStorage.setItem(LS_BASELINES, JSON.stringify(map));
+  } catch(e) {}
+}
+
+// A freshly imported program starts with blank 1RMs. Fill any it doesn't
+// already have from the program that was active, matched by id or lift name.
+function carryOverBaselines(prev) {
+  try {
+    const map = readBaselineMap(), id = currentProgramId();
+    const stored = (map[id] || []).filter(x => typeof x.orm === 'number');
+    let added = false;
+    BASELINES.forEach(b => {
+      if (b.orm > 0 || stored.some(x => x.id === b.id)) return;
+      const old = (prev || []).find(x => x.orm > 0 && (x.id === b.id || slugify(x.lift || '') === slugify(b.lift || '')));
+      if (old) { stored.push({ id: b.id, orm: old.orm }); added = true; }
+    });
+    if (added) { map[id] = stored; localStorage.setItem(LS_BASELINES, JSON.stringify(map)); }
   } catch(e) {}
 }
 
@@ -2106,22 +2173,23 @@ function initSession(dayType) {
 function scorePrimary(s) {
   const items = Object.values(s.primaries);
   if (items.length === 0) return null;
-  let total = 0, count = 0;
+  // Every programmed set counts: a set that wasn't logged scores zero, so
+  // skipping work costs points instead of dropping out of the average.
+  let total = 0;
   items.forEach(p => {
-    let itemTotal = 0, setCount = 0;
+    let itemTotal = 0;
     p.sets.forEach(set => {
       const r = parseInt(set.reps);
       if (!setLogged(p, set)) return;
-      setCount++;
       if (r >= p.target.repHigh) itemTotal += 100;
       else if (r >= p.target.repLow) {
         const span = Math.max(1, p.target.repHigh - p.target.repLow);
         itemTotal += 85 + ((r - p.target.repLow) / span) * 15;
       } else { itemTotal += Math.max(0, (r / p.target.repLow) * 70); }
     });
-    if (setCount > 0) { total += itemTotal / setCount; count++; }
+    if (p.sets.length) total += itemTotal / p.sets.length;
   });
-  return count > 0 ? total / count : null;
+  return total / items.length;
 }
 function scoreAr7(s) {
   const items = Object.values(s.ar7);
@@ -2133,16 +2201,15 @@ function scoreAr7(s) {
 function scoreAccessory(s) {
   const items = Object.values(s.accessories);
   if (items.length === 0) return null;
-  let total = 0, count = 0;
+  // An exercise with nothing logged scores zero rather than being ignored.
+  let total = 0;
   items.forEach(a => {
-    if (a.rpe > 0) { total += (a.rpe / 5) * 100; count++; }
-    else {
-      let filled = 0;
-      a.sets.forEach(set => { if (setLogged(a, set)) filled++; });
-      if (filled > 0) { total += (filled / a.sets.length) * 75; count++; }
-    }
+    if (a.rpe > 0) { total += (a.rpe / 5) * 100; return; }
+    let filled = 0;
+    a.sets.forEach(set => { if (setLogged(a, set)) filled++; });
+    if (a.sets.length) total += (filled / a.sets.length) * 75;
   });
-  return count > 0 ? total / count : null;
+  return total / items.length;
 }
 function scoreFeel(s) {
   if (!s.feel) return 0;
@@ -2211,9 +2278,9 @@ function getAllSessions() {
 }
 function saveAllSessions(arr) {
   if (arr.length > SESSION_CAP) arr = arr.slice(-SESSION_CAP);
-  try { localStorage.setItem(LS_SESSIONS, JSON.stringify(arr)); } catch(e) {}
+  try { localStorage.setItem(LS_SESSIONS, JSON.stringify(arr)); return true; } catch(e) { return false; }
 }
-function addSessionRecord(rec) { const all = getAllSessions(); all.push(rec); saveAllSessions(all); }
+function addSessionRecord(rec) { const all = getAllSessions(); all.push(rec); return saveAllSessions(all); }
 function sessionsByDay(dt) { return getAllSessions().filter(s => s.dayType === dt).sort((a,b) => new Date(a.date) - new Date(b.date)); }
 function lastScoreForDay(dt) { const arr = sessionsByDay(dt); return arr.length ? arr[arr.length-1].score.total : null; }
 function saveDraft() { if (!session) return; try { localStorage.setItem(LS_DRAFT, JSON.stringify(session)); } catch(e) {} }
@@ -2278,7 +2345,12 @@ function finishSession() {
     primaries: session.primaries, ar7: session.ar7, accessories: session.accessories,
     feel: session.feel, score: scores,
   };
-  addSessionRecord(record); clearDraft(); stopSessionClock();
+  if (!addSessionRecord(record)) {
+    // Keep the session open rather than drop a workout that didn't save.
+    alert('Could not save this session \u2014 browser storage is full or unavailable. The session is still open.');
+    return;
+  }
+  clearDraft(); stopSessionClock();
   session = null; document.body.classList.remove('session-active');
   document.getElementById('finishBar').style.display = 'none';
   lastSummary = record; render(); showSummary(record);
@@ -2332,11 +2404,11 @@ function renderSessionMode(day) {
     let itemsHtml = '';
     sec.items.forEach((item, ii) => {
       const key = si + '-' + ii;
-      const noteHtml = item.note ? '<div class="log-item-note">' + item.note + '</div>' : '';
-      const targetHtml = '<div class="log-item-target">Target: <strong>' + (displaySets(item)||'').replace(/"/g,'&quot;') + '</strong></div>';
+      const noteHtml = item.note ? '<div class="log-item-note">' + esc(item.note) + '</div>' : '';
+      const targetHtml = '<div class="log-item-target">Target: <strong>' + esc(displaySets(item)) + '</strong></div>';
       const entry = session.primaries[key] || session.accessories[key];
       const bwBtn = entry ? '<button class="bw-toggle' + (entry.bw?' on':'') + '" aria-pressed="' + (entry.bw?'true':'false') + '" onclick="toggleBodyweight(\'' + key + '\')">BW</button>' : '';
-      const header = '<div class="log-item-header"><div class="log-item-name">' + item.name + '</div>' + bwBtn + '</div>' + targetHtml + lastTimeHtml(item.name, history);
+      const header = '<div class="log-item-header"><div class="log-item-name">' + esc(item.name) + '</div>' + bwBtn + '</div>' + targetHtml + lastTimeHtml(item.name, history);
       if (cat === 'primary') {
         const p = session.primaries[key]; if (!p) return;
         const hintHtml = p.bw ? '' : weightHintHtml(item.name, item.sets, item.baselineId);
@@ -2375,13 +2447,13 @@ function renderSessionMode(day) {
       }
     });
     bodyHtml += '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '>' +
-      '<summary class="section-summary"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + sec.title + '</span></div><span class="mi section-caret">expand_more</span></summary>' +
+      '<summary class="section-summary"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + esc(sec.title) + '</span></div><span class="mi section-caret">expand_more</span></summary>' +
       '<div class="section-body">' + itemsHtml + '</div></details>';
   });
   document.getElementById('content').innerHTML =
-    '<div class="session-day-label">' + day.day + '</div>' +
-    '<h2 class="session-title" style="color:' + day.accent + '">' + day.label + '</h2>' +
-    '<div class="session-meta"><span class="session-sub">' + day.sub + '</span></div>' +
+    '<div class="session-day-label">' + esc(day.day) + '</div>' +
+    '<h2 class="session-title" style="color:' + day.accent + '">' + esc(day.label) + '</h2>' +
+    '<div class="session-meta"><span class="session-sub">' + esc(day.sub) + '</span></div>' +
     banner + '<div class="sections-list">' + bodyHtml + '</div>';
 }
 
@@ -2403,7 +2475,7 @@ function renderSummary(record) {
   const feelHtml = !record.feel ? renderFeelSurvey(record) : '';
   document.getElementById('summaryBody').innerHTML =
     '<div class="summary-eyebrow">' + new Date(record.date).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) + '</div>' +
-    '<div class="summary-day-label" style="color:' + day.accent + '">' + day.label + '</div>' +
+    '<div class="summary-day-label" style="color:' + day.accent + '">' + esc(day.label) + '</div>' +
     '<div class="score-ring-wrap"><div class="score-ring"><svg class="score-ring-svg" viewBox="0 0 220 220">' +
     '<circle class="score-ring-bg" cx="110" cy="110" r="92" fill="none" stroke-width="14"/>' +
     '<circle class="score-ring-fg" cx="110" cy="110" r="92" fill="none" stroke-width="14" stroke-dasharray="' + circ.toFixed(2) + '" stroke-dashoffset="' + offset.toFixed(2) + '"/>' +
@@ -2486,13 +2558,13 @@ function renderEditLog(record) {
         '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updateSessionPrimary(\'' + record.id + '\',\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
         '</div>';
     }).join('');
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Primary</span><span class="edit-log-group-name">' + p.name + '</span></div><div class="log-sets">' + setsHtml + '</div></div>';
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Primary</span><span class="edit-log-group-name">' + esc(p.name) + '</span></div><div class="log-sets">' + setsHtml + '</div></div>';
   });
   Object.keys(record.ar7 || {}).forEach(function(key) {
     const a = record.ar7[key];
     let dotsHtml = '';
     for (let r = 0; r < 7; r++) dotsHtml += '<button class="log-ar7-dot ' + (r < a.rounds ? 'done' : '') + '" onclick="updateSessionAr7Rounds(\'' + record.id + '\',\'' + key + '\',' + r + ')"></button>';
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">AR-7</span><span class="edit-log-group-name">' + a.name + '</span></div>' +
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">AR-7</span><span class="edit-log-group-name">' + esc(a.name) + '</span></div>' +
       '<div class="log-sets"><div class="log-set-row"><span class="log-set-num">LOAD</span><input class="log-input ' + (a.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="lb" value="' + (a.weight||'') + '" oninput="updateSessionAr7Weight(\'' + record.id + '\',\'' + key + '\',this.value)" style="flex:0 0 90px"/><span class="log-input-x" style="font-size:0.625rem">lb</span></div></div>' +
       '<div class="log-ar7" style="margin-top:10px"><span class="log-ar7-label">Rounds</span><div class="log-ar7-dots">' + dotsHtml + '</div><span class="log-ar7-count">' + a.rounds + '/7</span></div></div>';
   });
@@ -2508,7 +2580,7 @@ function renderEditLog(record) {
     }).join('');
     let rpeDots = '';
     for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" onclick="updateSessionRpe(\'' + record.id + '\',\'' + key + '\',' + r + ')">' + r + '</button>';
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Accessory</span><span class="edit-log-group-name">' + acc.name + '</span></div><div class="log-sets">' + setsHtml + '</div><div class="log-rpe" style="margin-top:10px"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div></div>';
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Accessory</span><span class="edit-log-group-name">' + esc(acc.name) + '</span></div><div class="log-sets">' + setsHtml + '</div><div class="log-rpe" style="margin-top:10px"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div></div>';
   });
   return groups || '<p style="font-size:0.75rem;color:var(--c-on-surface-v);padding:8px 0">No logged data to edit.</p>';
 }
@@ -2603,8 +2675,8 @@ function buildHistoryChips() {
   const sessionDayIds = [...new Set(getAllSessions().map(s => s.dayType))].filter(id => !trainDays.find(d => d.id === id));
   const el = document.getElementById('historyFilter');
   el.innerHTML = '<button class="history-chip ' + (historyFilter==='all'?'active':'') + '" data-filter="all">All</button>' +
-    trainDays.map(d => '<button class="history-chip ' + (historyFilter===d.id?'active':'') + '" data-filter="' + d.id + '">' + d.label + '</button>').join('') +
-    sessionDayIds.map(id => '<button class="history-chip ' + (historyFilter===id?'active':'') + '" data-filter="' + id + '">' + id.toUpperCase() + '</button>').join('');
+    trainDays.map(d => '<button class="history-chip ' + (historyFilter===d.id?'active':'') + '" data-filter="' + esc(d.id) + '">' + esc(d.label) + '</button>').join('') +
+    sessionDayIds.map(id => '<button class="history-chip ' + (historyFilter===id?'active':'') + '" data-filter="' + esc(id) + '">' + esc(id.toUpperCase()) + '</button>').join('');
 }
 function renderHistoryPage() {
   const el = document.getElementById('historyContent');
@@ -2631,7 +2703,7 @@ function renderHistoryPage() {
       const isToday = new Date().toDateString() === d.toDateString();
       rows += '<div class="session-row" onclick="openSessionSummary(\'' + s.id + '\')"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span><span class="session-row-score" style="' + (isWarn&&i===0?'color:#ffb84d':'') + '">' + s.score.total + '</span></div>';
     });
-    html += '<div class="day-card ' + (isWarn?'warn':'') + '"><div class="day-card-header"><div class="day-card-day" style="color:' + day.accent + '">' + day.label + (day.day?' \xB7 ' + day.day:'') + '</div><div class="day-card-avg">Avg <strong>' + avg + '</strong> \xB7 ' + arr.length + ' session' + (arr.length===1?'':'s') + '</div></div><div class="sparkline-wrap">' + spark + '</div><div class="day-card-sessions">' + rows + '</div></div>';
+    html += '<div class="day-card ' + (isWarn?'warn':'') + '"><div class="day-card-header"><div class="day-card-day" style="color:' + day.accent + '">' + esc(day.label) + (day.day?' \xB7 ' + esc(day.day):'') + '</div><div class="day-card-avg">Avg <strong>' + avg + '</strong> \xB7 ' + arr.length + ' session' + (arr.length===1?'':'s') + '</div></div><div class="sparkline-wrap">' + spark + '</div><div class="day-card-sessions">' + rows + '</div></div>';
   });
   if (!html) html = '<div class="history-empty"><div class="history-empty-text">No sessions for this filter yet.</div></div>';
   el.innerHTML = html;
@@ -2667,7 +2739,7 @@ function renderBaselines() {
   el.innerHTML = data.map(b => `
     <div class="baseline-row">
       <div>
-        <div class="baseline-lift">${b.lift}</div>
+        <div class="baseline-lift">${esc(b.lift)}</div>
         <div class="baseline-range">Range: <span class="baseline-range-val">${workingRange(b.orm,b.pctLow,b.pctHigh)}</span></div>
       </div>
       <div class="baseline-right">
@@ -2675,7 +2747,7 @@ function renderBaselines() {
           <div class="baseline-orm-label">Est. 1RM</div>
           <div class="baseline-orm-val">${b.orm > 0 ? b.orm + ' LB' : '—'}</div>
         </div>
-        <button class="edit-btn baseline-edit-btn" data-id="${b.id}" aria-label="Edit ${b.lift}">
+        <button class="edit-btn baseline-edit-btn" data-id="${esc(b.id)}" aria-label="Edit ${esc(b.lift)}">
           <span class="mi mi-sm">edit</span>
         </button>
       </div>
@@ -2727,20 +2799,20 @@ function renderProgPage() {
   const trainDays = DAYS.filter(d => !d.isOff);
   const imported = new Date(PROGRAM.importedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   el.innerHTML = '<div class="prog-hero-label">Active Program</div>' +
-    '<h2 class="prog-hero-title">' + PROGRAM.name + '</h2>' +
+    '<h2 class="prog-hero-title">' + esc(PROGRAM.name) + '</h2>' +
     '<p class="prog-hero-sub">' + trainDays.length + ' Training Day' + (trainDays.length!==1?'s':'') + ' \xB7 Imported ' + imported + '</p>' +
     '<div class="bento-grid">' +
     '<div class="glass-card"><h3 class="prog-sub-heading">Schedule</h3><div class="schedule-list">' +
-    DAYS.filter(d=>!d.isOff).map(d => '<div class="schedule-item">' + (d.day||d.id) + ' \u2014 <strong>' + d.label + '</strong> \xB7 <span style="color:var(--c-on-surface-v)">' + d.sub + '</span></div>').join('') +
+    DAYS.filter(d=>!d.isOff).map(d => '<div class="schedule-item">' + esc(d.day||d.id) + ' \u2014 <strong>' + esc(d.label) + '</strong> \xB7 <span style="color:var(--c-on-surface-v)">' + esc(d.sub) + '</span></div>').join('') +
     '</div></div>' +
     '<div class="stat-cards"><div class="stat-card"><div class="stat-label">Training Days</div><div class="stat-val-row"><span class="stat-num">' + trainDays.length + '</span><span class="stat-unit">/Week</span></div></div>' +
     '<div class="stat-card"><div class="stat-label">Baselines</div><div class="stat-val-row"><span class="stat-num">' + BASELINES.length + '</span><span class="stat-unit">Lifts</span></div></div></div>' +
     '</div>' +
     trainDays.map(day =>
       '<div class="prog-day-card">' +
-      '<div class="prog-day-header"><div class="prog-day-dot" style="background:' + day.accent + '"></div><h3 style="font-family:var(--font-h);font-weight:800;font-size:1.125rem;color:' + day.accent + ';margin:0">' + day.label + '</h3>' + (day.duration ? '<span style="font-family:var(--font-b);font-size:0.75rem;color:var(--c-on-surface-v)">' + day.duration + '</span>' : '') + '</div>' +
-      (day.notes ? '<p style="font-size:0.8125rem;color:var(--c-on-surface-v);line-height:1.6;margin-bottom:1rem">' + day.notes + '</p>' : '') +
-      '<div class="schedule-list">' + day.sections.map(sec => '<div class="schedule-item"><strong>' + sec.title + '</strong>' + (sec.items.length ? ' \xB7 ' + sec.items.map(i=>i.name).slice(0,3).join(', ') + (sec.items.length>3?'…':'') : '') + '</div>').join('') + '</div></div>'
+      '<div class="prog-day-header"><div class="prog-day-dot" style="background:' + day.accent + '"></div><h3 style="font-family:var(--font-h);font-weight:800;font-size:1.125rem;color:' + day.accent + ';margin:0">' + esc(day.label) + '</h3>' + (day.duration ? '<span style="font-family:var(--font-b);font-size:0.75rem;color:var(--c-on-surface-v)">' + esc(day.duration) + '</span>' : '') + '</div>' +
+      (day.notes ? '<p style="font-size:0.8125rem;color:var(--c-on-surface-v);line-height:1.6;margin-bottom:1rem">' + esc(day.notes) + '</p>' : '') +
+      '<div class="schedule-list">' + day.sections.map(sec => '<div class="schedule-item"><strong>' + esc(sec.title) + '</strong>' + (sec.items.length ? ' \xB7 ' + esc(sec.items.map(i=>i.name).slice(0,3).join(', ')) + (sec.items.length>3?'…':'') : '') + '</div>').join('') + '</div></div>'
     ).join('');
 }
 
@@ -2760,7 +2832,7 @@ function renderImportPage() {
     const origin = locked ? 'Built-in \xB7 bundled with the app' : 'Imported ' + imported;
     programCardHtml = '<div class="prog-meta-card">' +
       '<div class="prog-meta-label">Active Program</div>' +
-      '<div class="prog-meta-name">' + PROGRAM.name + (locked ? '<span class="prog-locked-badge">LOCKED</span>' : '') + '</div>' +
+      '<div class="prog-meta-name">' + esc(PROGRAM.name) + (locked ? '<span class="prog-locked-badge">LOCKED</span>' : '') + '</div>' +
       '<div class="prog-meta-detail">' + days.length + ' training day' + (days.length!==1?'s':'') + ' \xB7 ' + origin + '</div>' +
       '<button class="btn-ghost" style="margin-top:1rem;width:100%" onclick="exportProgramJSON()"><span class="mi mi-sm">download</span>Export Program (JSON)</button>' +
       (locked ? '' : '<button class="btn-ghost" style="margin-top:0.5rem;width:100%;border-color:rgba(255,115,81,0.3);color:#ff7351" onclick="confirmClearProgram()"><span class="mi mi-sm">restore</span>Restore Built-In Program</button>') +
@@ -2776,7 +2848,7 @@ function renderImportPage() {
       }, 0);
       return '<button class="builtin-row' + (on ? ' on' : '') + '" onclick="selectBuiltIn(\'' + p.id + '\')">' +
         '<span class="mi builtin-mark">' + (on ? 'radio_button_checked' : 'radio_button_unchecked') + '</span>' +
-        '<span class="builtin-text"><span class="builtin-name">' + p.name + '</span>' +
+        '<span class="builtin-text"><span class="builtin-name">' + esc(p.name) + '</span>' +
         '<span class="builtin-meta">' + trainDays + ' training day' + (trainDays !== 1 ? 's' : '') + ' \xB7 ' + lifts + ' exercises</span></span>' +
         '</button>';
     }).join('');
@@ -2826,8 +2898,7 @@ function handleProgramFile(file) {
         program.name = program.name || file.name.replace(/\.json$/i,'');
         program.baselines = program.baselines || [];
         program.importedAt = new Date().toISOString();
-        // Keep an imported copy from colliding with a built-in's baselines.
-        if (builtInById(program.id)) program.id = program.id + '-import';
+        program = sanitizeProgram(program);
       } else {
         const rows = parseCSV(e.target.result);
         const programName = file.name.replace(/\.csv$/i,'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
@@ -2835,10 +2906,14 @@ function handleProgramFile(file) {
         if (!program.days || program.days.length === 0) throw new Error('No valid training days found. Check that the day column is filled.');
       }
       if (!program.days || program.days.length === 0) throw new Error('No valid training days found.');
+      // Keep an imported copy from colliding with a built-in's baselines.
+      if (builtInById(program.id)) program.id = program.id + '-import';
+      const prevBaselines = loadBaselines();
       saveProgram(program);
       PROGRAM = program; DAYS = program.days; BASELINES = program.baselines;
       const todayId = program.weekdayMap ? program.weekdayMap[new Date().getDay()] : null;
       activeDay = todayId || (DAYS[0] ? DAYS[0].id : 'off');
+      carryOverBaselines(prevBaselines);
       statusEl.textContent = '\u2713 ' + program.name + ' imported \u2014 ' + DAYS.filter(d=>!d.isOff).length + ' training day' + (DAYS.filter(d=>!d.isOff).length!==1?'s':'') + ' loaded.';
       statusEl.className = 'import-status success';
       setTimeout(() => { closeImportPage(); render(); renderBaselines(); }, 1200);
@@ -2906,7 +2981,7 @@ function render() {
   document.getElementById('tabs').innerHTML = DAYS.map(d => {
     const active = activeDay === d.id, locked = session && session.dayType !== d.id;
     const op = locked ? 'opacity:0.35;' : '';
-    return '<button class="tab-btn' + (active?' active':'') + '" data-day-id="' + d.id + '" style="' + op + (active?'color:'+d.accent+';border-bottom-color:'+d.accent:'') + '"><span class="tab-day">' + d.day + '</span>' + d.label + '</button>';
+    return '<button class="tab-btn' + (active?' active':'') + '" data-day-id="' + d.id + '" style="' + op + (active?'color:'+d.accent+';border-bottom-color:'+d.accent:'') + '"><span class="tab-day">' + esc(d.day) + '</span>' + esc(d.label) + '</button>';
   }).join('');
   document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchDay(b.dataset.dayId)));
 
@@ -2917,17 +2992,17 @@ function render() {
 
   const lastScore = lastScoreForDay(day.id);
   const badgeHtml = lastScore !== null
-    ? '<div class="last-week-badge" onclick="showHistoryPage()"><div class="lwb-icon"><span class="mi">history</span></div><span class="lwb-label">Last ' + (day.day||day.id).slice(0,3) + '</span><span class="lwb-score">' + lastScore + '</span></div>'
+    ? '<div class="last-week-badge" onclick="showHistoryPage()"><div class="lwb-icon"><span class="mi">history</span></div><span class="lwb-label">Last ' + esc((day.day||day.id).slice(0,3)) + '</span><span class="lwb-score">' + lastScore + '</span></div>'
     : '';
 
   let nudgeHtml = '';
   if (checkDeloadNudge(day.id) && !isNudgeDismissed(day.id)) {
     const arr = sessionsByDay(day.id).slice(-3).map(s => s.score.total).join(' \u2192 ');
-    nudgeHtml = '<div class="deload-nudge"><span class="mi deload-icon">warning</span><div class="deload-body"><div class="deload-title">Trending Down</div><div class="deload-text">' + day.label + ' scores trending down (' + arr + '). Deload or effort check?</div></div><button class="deload-close" onclick="dismissDeload(\'' + day.id + '\')"><span class="mi mi-sm">close</span></button></div>';
+    nudgeHtml = '<div class="deload-nudge"><span class="mi deload-icon">warning</span><div class="deload-body"><div class="deload-title">Trending Down</div><div class="deload-text">' + esc(day.label) + ' scores trending down (' + arr + '). Deload or effort check?</div></div><button class="deload-close" onclick="dismissDeload(\'' + day.id + '\')"><span class="mi mi-sm">close</span></button></div>';
   }
 
   const startBtnHtml = session ? '' : '<button class="start-session-btn" onclick="startSession(\'' + day.id + '\')"><span class="mi">play_arrow</span>Start Session</button>';
-  const notesHtml = day.notes ? '<div class="notes-banner"><span class="mi mi-fill notes-banner-icon">lightbulb</span><div class="notes-label">Session Notes</div><p class="notes-text">' + day.notes + '</p></div>' : '';
+  const notesHtml = day.notes ? '<div class="notes-banner"><span class="mi mi-fill notes-banner-icon">lightbulb</span><div class="notes-label">Session Notes</div><p class="notes-text">' + esc(day.notes) + '</p></div>' : '';
   const baselines = loadBaselines();
   const history = getAllSessions();
 
@@ -2941,15 +3016,15 @@ function render() {
     const borderStyle = isAr7 ? 'style="border-left-color:' + day.accent + '"' : '';
     const itemsHtml = sec.items.map(item => {
       const setsStr = displaySets(item, baselines);
-      return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + item.name + '</div>' + (item.note?'<div class="section-item-note">'+item.note+'</div>':'') + (classifySection(sec)==='skip'?'':lastTimeHtml(item.name, history)) + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + setsStr + '</span></div>';
+      return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + esc(item.name) + '</div>' + (item.note?'<div class="section-item-note">'+esc(item.note)+'</div>':'') + (classifySection(sec)==='skip'?'':lastTimeHtml(item.name, history)) + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + esc(setsStr) + '</span></div>';
     }).join('');
-    return '<details class="section-accordion' + (isAr7?' ar7':'') + '" ' + (isOpen?'open':'') + ' ' + borderStyle + '><summary class="section-summary" data-key="' + key + '" onclick="toggleSection(\'' + key + '\',event)"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + sec.title + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
+    return '<details class="section-accordion' + (isAr7?' ar7':'') + '" ' + (isOpen?'open':'') + ' ' + borderStyle + '><summary class="section-summary" data-key="' + key + '" onclick="toggleSection(\'' + key + '\',event)"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + esc(sec.title) + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
   }).join('');
 
   document.getElementById('content').innerHTML =
-    '<div class="session-day-label">' + day.day + '</div>' +
-    '<h2 class="session-title" style="color:' + day.accent + '">' + day.label + '</h2>' +
-    '<div class="session-meta"><span class="session-sub">' + day.sub + '</span><span class="session-duration">\xB7 ' + day.duration + '</span></div>' +
+    '<div class="session-day-label">' + esc(day.day) + '</div>' +
+    '<h2 class="session-title" style="color:' + day.accent + '">' + esc(day.label) + '</h2>' +
+    '<div class="session-meta"><span class="session-sub">' + esc(day.sub) + '</span><span class="session-duration">\xB7 ' + esc(day.duration) + '</span></div>' +
     badgeHtml + nudgeHtml + startBtnHtml + notesHtml +
     '<div class="sections-list">' + sectionsHtml + '</div>';
 }
@@ -2962,12 +3037,12 @@ function renderOffDays(day) {
       const isAr7 = !!sec.ar7;
       const itemsHtml = sec.items.map(item => {
         const setsStr = displaySets(item, baselines);
-        return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + item.name + '</div>' + (item.note?'<div class="section-item-note">'+item.note+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + setsStr + '</span></div>';
+        return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + esc(item.name) + '</div>' + (item.note?'<div class="section-item-note">'+esc(item.note)+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + esc(setsStr) + '</span></div>';
       }).join('');
       const borderStyle = isAr7 ? 'style="border-left-color:' + day.accent + '"' : '';
-      return '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '><summary class="section-summary"><div class="section-summary-left"><span class="mi" style="color:#adaaaa">' + (sec.icon||'layers') + '</span><span class="section-title">' + sec.title + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
+      return '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '><summary class="section-summary"><div class="section-summary-left"><span class="mi" style="color:#adaaaa">' + (sec.icon||'layers') + '</span><span class="section-title">' + esc(sec.title) + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
     }).join('');
-    document.getElementById('content').innerHTML = '<div class="session-day-label">' + day.day + '</div><h2 class="session-title" style="color:' + day.accent + '">' + day.label + '</h2><div class="session-meta"><span class="session-sub">' + day.sub + '</span></div><div class="sections-list">' + sectionsHtml + '</div>';
+    document.getElementById('content').innerHTML = '<div class="session-day-label">' + esc(day.day) + '</div><h2 class="session-title" style="color:' + day.accent + '">' + esc(day.label) + '</h2><div class="session-meta"><span class="session-sub">' + esc(day.sub) + '</span></div><div class="sections-list">' + sectionsHtml + '</div>';
     return;
   }
 
@@ -2979,7 +3054,7 @@ function renderOffDays(day) {
     { title:'Frequency', rows:[['Recovery Day','1\u20132\xD7 / week'],['Conditioning Day','1\xD7 / week'],['Full Rest','At least 1 day']], note:'Full rest means full rest. Mobility is not mandatory. Sleep is.' },
   ];
   document.getElementById('content').innerHTML =
-    '<div class="session-day-label">' + day.day + '</div><h2 class="session-title" style="color:' + day.accent + '">' + day.label + '</h2><div class="session-meta"><span class="session-sub">' + day.sub + '</span></div>' +
+    '<div class="session-day-label">' + esc(day.day) + '</div><h2 class="session-title" style="color:' + day.accent + '">' + esc(day.label) + '</h2><div class="session-meta"><span class="session-sub">' + esc(day.sub) + '</span></div>' +
     '<div style="margin-top:1rem">' + blocks.map(b => '<div class="offday-card"><div class="offday-type">' + b.title + '</div>' + b.rows.map(([n,v]) => '<div class="offday-row"><span class="offday-name">'+n+'</span><span class="offday-val">'+v+'</span></div>').join('') + '<p class="offday-note">' + b.note + '</p></div>').join('') + '</div>';
 }
 
