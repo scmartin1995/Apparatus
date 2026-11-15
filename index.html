@@ -668,6 +668,7 @@ const LS_SESSIONS  = 'apparatus_sessions';
 const LS_DRAFT     = 'apparatus_draft';
 const LS_NUDGE     = 'apparatus_nudge_';
 const LS_BUILTIN   = 'apparatus_builtin';
+const LS_TIMER     = 'apparatus_timer';
 const SESSION_CAP  = 32;
 
 // ── BUILT-IN PROGRAMS ─────────────────────────────────────────
@@ -3068,7 +3069,28 @@ const CIRC = 219.9;
 let timerTotal=90, timerRemaining=90, timerEndAt=0, timerInterval=null, timerState='idle', timerPanelOpen=false;
 const arcEl=document.getElementById('timerArc'), displayEl=document.getElementById('timerDisplay'), statusEl=document.getElementById('timerStatus'), bubbleEl=document.getElementById('timerBubble');
 function getAccent() { const d = DAYS.find(d => d.id===activeDay); return d ? d.accent : '#cafd00'; }
+// The timer survives a reload: iOS routinely evicts a backgrounded PWA, and
+// the app relaunches from scratch when you come back to it.
+function saveTimerState() {
+  try { localStorage.setItem(LS_TIMER, JSON.stringify({ total: timerTotal, remaining: timerRemaining, state: timerState, endAt: timerEndAt })); } catch(e) {}
+}
+function restoreTimerState() {
+  let t = null;
+  try { t = JSON.parse(localStorage.getItem(LS_TIMER) || 'null'); } catch(e) {}
+  if (!t || !(t.total > 0)) return;
+  timerTotal = t.total; timerRemaining = t.total;
+  if (t.state === 'running' && t.endAt) {
+    timerEndAt = t.endAt;
+    timerRemaining = Math.max(0, Math.ceil((timerEndAt - Date.now()) / 1000));
+    if (timerRemaining > 0) { timerState = 'running'; clearInterval(timerInterval); timerInterval = setInterval(tickTimer, 250); }
+    else timerState = 'done';
+  } else if (t.state === 'paused' && t.remaining > 0) {
+    timerState = 'paused'; timerRemaining = Math.min(t.remaining, t.total);
+  }
+  document.querySelectorAll('.timer-preset').forEach(b => b.classList.toggle('active', parseInt(b.dataset.seconds) === timerTotal));
+}
 function updateTimerDisplay() {
+  saveTimerState();
   const accent=getAccent(), pct=timerTotal>0?timerRemaining/timerTotal:0;
   arcEl.style.strokeDashoffset = CIRC*(1-pct);
   if (timerState==='running') { displayEl.textContent=fmtTime(timerRemaining); arcEl.style.stroke=accent; statusEl.textContent='TAP'; }
@@ -3200,6 +3222,7 @@ function syncLayoutVars() {
 }
 
 initProgramState();
+restoreTimerState();
 updateTimerDisplay();
 renderBaselines();
 render();
