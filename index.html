@@ -313,6 +313,9 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .log-item-name { font-family: var(--font-h); font-weight: 700; font-size: 0.875rem; color: var(--c-on-surface); line-height: 1.3; flex: 1; }
 .log-item-target { font-family: var(--font-h); font-size: 0.625rem; color: var(--c-on-surface-v); text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; padding-top: 2px; }
 .log-item-target strong { color: var(--c-primary-ctr); }
+.last-time { font-family: var(--font-h); font-size: 0.6875rem; color: var(--c-on-surface-v); letter-spacing: 0.04em; margin-top: 4px; }
+.last-time strong { color: #00e3fd; font-weight: 700; }
+.log-item .last-time { margin: 2px 0 8px; }
 .log-item-note { font-family: var(--font-b); font-size: 0.6875rem; color: var(--c-on-surface-v); line-height: 1.5; margin-bottom: 10px; font-style: italic; opacity: 0.85; }
 .log-sets { display: flex; flex-direction: column; gap: 6px; }
 .log-set-row { display: flex; align-items: center; gap: 8px; }
@@ -2287,6 +2290,7 @@ window.setAccessoryRpe = function(key, val) {
 function renderSessionMode(day) {
   const banner = '<div class="session-mode-banner"><div class="sm-left"><div class="sm-pulse"></div><div><div class="sm-label">Session Active</div><div class="sm-timer" id="sessionTimerLbl">0:00 elapsed</div></div></div><button class="sm-close" onclick="discardSession()"><span class="mi mi-sm">close</span></button></div>';
   let bodyHtml = '';
+  const history = getAllSessions();
   day.sections.forEach((sec, si) => {
     const cat = classifySection(sec);
     if (cat === 'skip') return;
@@ -2300,7 +2304,7 @@ function renderSessionMode(day) {
       const key = si + '-' + ii;
       const noteHtml = item.note ? '<div class="log-item-note">' + item.note + '</div>' : '';
       const targetHtml = '<div class="log-item-target">Target: <strong>' + (displaySets(item)||'').replace(/"/g,'&quot;') + '</strong></div>';
-      const header = '<div class="log-item-header"><div class="log-item-name">' + item.name + '</div></div>' + targetHtml;
+      const header = '<div class="log-item-header"><div class="log-item-name">' + item.name + '</div></div>' + targetHtml + lastTimeHtml(item.name, history);
       if (cat === 'primary') {
         const p = session.primaries[key]; if (!p) return;
         const hintHtml = weightHintHtml(item.name, item.sets, item.baselineId);
@@ -2893,6 +2897,7 @@ function render() {
   const startBtnHtml = session ? '' : '<button class="start-session-btn" onclick="startSession(\'' + day.id + '\')"><span class="mi">play_arrow</span>Start Session</button>';
   const notesHtml = day.notes ? '<div class="notes-banner"><span class="mi mi-fill notes-banner-icon">lightbulb</span><div class="notes-label">Session Notes</div><p class="notes-text">' + day.notes + '</p></div>' : '';
   const baselines = loadBaselines();
+  const history = getAllSessions();
 
   const sectionsHtml = day.sections.map((sec, si) => {
     const key = day.id + '-' + si;
@@ -2904,7 +2909,7 @@ function render() {
     const borderStyle = isAr7 ? 'style="border-left-color:' + day.accent + '"' : '';
     const itemsHtml = sec.items.map(item => {
       const setsStr = displaySets(item, baselines);
-      return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + item.name + '</div>' + (item.note?'<div class="section-item-note">'+item.note+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + setsStr + '</span></div>';
+      return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + item.name + '</div>' + (item.note?'<div class="section-item-note">'+item.note+'</div>':'') + (classifySection(sec)==='skip'?'':lastTimeHtml(item.name, history)) + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + setsStr + '</span></div>';
     }).join('');
     return '<details class="section-accordion' + (isAr7?' ar7':'') + '" ' + (isOpen?'open':'') + ' ' + borderStyle + '><summary class="section-summary" data-key="' + key + '" onclick="toggleSection(\'' + key + '\',event)"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + sec.title + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
   }).join('');
@@ -3030,6 +3035,36 @@ function getSuggestedWeight(exerciseName, setsStr, baselineId) {
     }
   }
   return null;
+}
+// What was actually lifted the last time this exercise was logged, so the
+// next session starts from real numbers instead of a guess.
+function lastLogged(name, all) {
+  const slug = slugify(name || '');
+  if (!slug) return null;
+  all = all || getAllSessions();
+  const num = v => String(parseFloat(v));
+  for (let i = all.length - 1; i >= 0; i--) {
+    const s = all[i], groups = [s.primaries || {}, s.accessories || {}];
+    for (let g = 0; g < groups.length; g++) {
+      for (const k in groups[g]) {
+        const it = groups[g][k];
+        if (slugify(it.name || '') !== slug || !it.sets) continue;
+        const done = it.sets.filter(st => parseFloat(st.weight) > 0);
+        if (done.length) return { date: s.date, text: done.map(st => num(st.weight) + (parseInt(st.reps) > 0 ? '\xD7' + parseInt(st.reps) : '')).join(', ') + ' lb' };
+      }
+    }
+    for (const k in (s.ar7 || {})) {
+      const it = s.ar7[k];
+      if (slugify(it.name || '') === slug && parseFloat(it.weight) > 0) return { date: s.date, text: num(it.weight) + ' lb \xB7 ' + (it.rounds || 0) + '/7 rounds' };
+    }
+  }
+  return null;
+}
+function lastTimeHtml(name, all) {
+  const l = lastLogged(name, all);
+  if (!l) return '';
+  const when = new Date(l.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return '<div class="last-time">Last \xB7 ' + when + ': <strong>' + l.text + '</strong></div>';
 }
 function weightHintHtml(exerciseName, setsStr, baselineId) {
   const s = getSuggestedWeight(exerciseName, setsStr, baselineId);

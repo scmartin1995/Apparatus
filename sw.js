@@ -1,6 +1,6 @@
 // ── APPARATUS SERVICE WORKER ───────────────────────────────
 // No manual path config needed. Paths auto-derived from SW scope.
-const CACHE_NAME = 'apparatus-v8';
+const CACHE_NAME = 'apparatus-v9';
 
 // ── INSTALL ────────────────────────────────────────────────
 self.addEventListener('install', event => {
