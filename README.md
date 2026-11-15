@@ -98,6 +98,7 @@ icon-192.png / icon-512.png     app icons
 programs/*.json                 program definitions
 programs/index.json             ordered list of what ships; first is the default
 tools/embed-program.js          validates them and inlines them into index.html
+tools/build-apk.sh              builds the Android app from android/ and the web app
 apparatus-program-template.csv  CSV reference
 ```
 
@@ -111,6 +112,22 @@ session), a `baselineId` with no matching baseline, a baseline-bound exercise
 that still has a fixed load in its sets string, a `weekdayMap` entry naming a day
 that doesn't exist, or two programs sharing an `id` (which would make them share
 one set of 1RMs).
+
+## Android app
+
+`tools/build-apk.sh` wraps the web app in a WebView and writes
+`android/build/apparatus.apk`, with the fonts bundled so it needs no network.
+The script header lists the tools it needs.
+
+The app keeps its own data, separate from the browser install. *Back Up All
+Data* on the Manage Program screen writes the program, 1RMs and history to one
+file; importing that file on the other side restores it.
+
+An update only installs over the existing app if it is signed with the same
+key. The keystore is not in the repo (`*.keystore` is gitignored); it is kept
+in Google Drive as `apparatus-signing.keystore`. Put it at
+`android/apparatus.keystore` before building, or the script creates a new key
+and the installed app has to be uninstalled first, which wipes its data.
 
 ## Local preview
 

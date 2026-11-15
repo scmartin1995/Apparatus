@@ -2033,15 +2033,50 @@ function generateCSVTemplate() {
   ];
   return rows.map(esc).join('\n');
 }
-function downloadTemplate() {
-  const csv = generateCSVTemplate();
-  const blob = new Blob([csv], {type:'text/csv'});
+// The Android app saves through its own bridge, because a WebView can't
+// download a blob link.
+function downloadText(name, mime, text) {
+  if (window.AndroidBridge && window.AndroidBridge.saveFile) { window.AndroidBridge.saveFile(name, mime, text); return; }
+  const blob = new Blob([text], {type: mime});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'apparatus-program-template.csv';
+  a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+function downloadTemplate() {
+  downloadText('apparatus-program-template.csv', 'text/csv', generateCSVTemplate());
+}
+
+// ── BACKUP / RESTORE ───────────────────────────────────────
+// Everything the app stores, in one file: program, 1RMs, history, settings.
+// It is how data moves between the browser install and the Android app.
+function exportBackup() {
+  const data = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf('apparatus_') === 0) data[k] = localStorage.getItem(k);
+    }
+  } catch(e) {}
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadText('apparatus-backup-' + stamp + '.json', 'application/json',
+    JSON.stringify({ apparatusBackup: 1, exportedAt: new Date().toISOString(), data: data }, null, 2));
+}
+function restoreBackup(backup) {
+  const keys = Object.keys(backup.data || {}).filter(k => k.indexOf('apparatus_') === 0 && typeof backup.data[k] === 'string');
+  if (!keys.length) throw new Error('Backup file is empty.');
+  let n = 0;
+  try { n = JSON.parse(backup.data[LS_SESSIONS] || '[]').length; } catch(e) {}
+  if (!confirm('Restore this backup (' + n + ' session' + (n === 1 ? '' : 's') + ')? It replaces the program, 1RMs and history on this device.')) return false;
+  const old = [];
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('apparatus_') === 0) old.push(k); }
+  old.forEach(k => localStorage.removeItem(k));
+  keys.forEach(k => localStorage.setItem(k, backup.data[k]));
+  location.reload();
+  return true;
+}
+window.exportBackup = exportBackup;
 
 // ── BASELINE MANAGEMENT ────────────────────────────────────
 // Overrides live in a { [programId]: [...] } map so switching between the
@@ -2855,9 +2890,12 @@ function renderImportPage() {
 
   el.innerHTML = programCardHtml + builtInsHtml +
     '<div class="import-section-title">Import New Program</div>' +
-    '<div class="upload-zone" id="uploadZone"><span class="mi upload-zone-icon">upload_file</span><div class="upload-zone-label">Tap to select CSV or JSON</div><div class="upload-zone-sub">or drag and drop</div></div>' +
+    '<div class="upload-zone" id="uploadZone"><span class="mi upload-zone-icon">upload_file</span><div class="upload-zone-label">Tap to select CSV, JSON or a backup</div><div class="upload-zone-sub">or drag and drop</div></div>' +
     '<input type="file" id="csvFileInput" accept=".csv,.json,text/csv,application/json" style="display:none"/>' +
     '<div id="importStatus" class="import-status"></div>' +
+    '<div class="import-section-title">Backup</div>' +
+    '<button class="btn-ghost" style="width:100%" onclick="exportBackup()"><span class="mi mi-sm">save</span>Back Up All Data</button>' +
+    '<div class="upload-zone-sub" style="margin-top:0.5rem">Program, 1RMs and session history in one file. Restore it with the import box above.</div>' +
     '<div class="import-section-title">Need a template?</div>' +
     '<button class="btn-ghost" style="width:100%" onclick="downloadTemplate()"><span class="mi mi-sm">download</span>Download CSV Template</button>';
 
@@ -2885,14 +2923,19 @@ function handleProgramFile(file) {
   const statusEl = document.getElementById('importStatus');
   if (session) { statusEl.textContent = '✕ ' + SESSION_LOCK_MSG; statusEl.className = 'import-status error'; return; }
   statusEl.textContent = 'Reading\u2026'; statusEl.className = 'import-status info';
-  const isJson = /\.json$/i.test(file.name);
   const reader = new FileReader();
   reader.onload = e => {
     try {
       let program;
+      // Go by content as well: the Android file picker can drop the extension.
+      const isJson = /\.json$/i.test(file.name) || /^\s*\{/.test(e.target.result);
       if (isJson) {
         // Round-trips a file produced by Export Program (JSON).
         program = JSON.parse(e.target.result);
+        if (program && program.apparatusBackup && program.data) {
+          if (!restoreBackup(program)) { statusEl.textContent = ''; statusEl.className = 'import-status'; }
+          return;
+        }
         if (!program || !Array.isArray(program.days)) throw new Error('Not an Apparatus program export.');
         program.id = program.id || 'prog-' + Date.now();
         program.name = program.name || file.name.replace(/\.json$/i,'');
@@ -2948,12 +2991,7 @@ window.selectBuiltIn = function(id) {
 window.exportProgramJSON = function() {
   if (!PROGRAM) return;
   const out = Object.assign({}, PROGRAM, { baselines: loadBaselines() });
-  const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = (slugify(PROGRAM.name) || 'apparatus-program') + '.json';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadText((slugify(PROGRAM.name) || 'apparatus-program') + '.json', 'application/json', JSON.stringify(out, null, 2));
 };
 
 // ── RENDER: NO PROGRAM STATE ───────────────────────────────
@@ -3341,16 +3379,21 @@ document.getElementById('modalWeight').addEventListener('input', updateModalPrev
 document.getElementById('modalReps').addEventListener('input', updateModalPreview);
 document.getElementById('modalWeight').addEventListener('keyup', e => { if(e.key==='Enter') saveBaseline(); });
 document.getElementById('modalReps').addEventListener('keyup', e => { if(e.key==='Enter') saveBaseline(); });
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
-  if (document.getElementById('timerSettingsOverlay').classList.contains('open')) { closeTimerSettings(); return; }
-  if (document.getElementById('summaryPage').classList.contains('open')) { closeSummary(); return; }
-  if (document.getElementById('historyPage').classList.contains('open')) { closeHistoryPage(); return; }
-  if (document.getElementById('importPage').classList.contains('open')) { closeImportPage(); return; }
-  if (document.getElementById('strengthPage').classList.contains('open')) { closeStrengthPage(); return; }
-  if (document.getElementById('progPage').classList.contains('open')) { closeProgPage(); return; }
-  if (document.getElementById('baselineModal').classList.contains('open')) { closeBaselineModal(); return; }
-});
+// Closes whatever is on top; true if something was closed. Also what the
+// Android app's back button calls.
+function closeTopLayer() {
+  const open = id => document.getElementById(id).classList.contains('open');
+  if (open('timerSettingsOverlay')) { closeTimerSettings(); return true; }
+  if (open('baselineModal')) { closeBaselineModal(); return true; }
+  if (open('summaryPage')) { closeSummary(); return true; }
+  if (open('historyPage')) { closeHistoryPage(); return true; }
+  if (open('importPage')) { closeImportPage(); return true; }
+  if (open('strengthPage')) { closeStrengthPage(); return true; }
+  if (open('progPage')) { closeProgPage(); return true; }
+  return false;
+}
+window.apparatusBack = closeTopLayer;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTopLayer(); });
 let scrollTimer = null;
 window.addEventListener('scroll', () => { bubbleEl.classList.add('scroll-fade'); clearTimeout(scrollTimer); scrollTimer=setTimeout(()=>bubbleEl.classList.remove('scroll-fade'),800); }, {passive:true});
 
