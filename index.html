@@ -26,6 +26,9 @@
 })();
 </script>
 <link rel="manifest" href="manifest.json"/>
+<link rel="icon" href="favicon.svg" type="image/svg+xml"/>
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png"/>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
@@ -144,6 +147,8 @@ details > summary::-webkit-details-marker { display: none; }
 /* ── TOP BAR ──────────────────────────────────────────────── */
 .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 50; background: color-mix(in srgb, var(--c-surface) 85%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: space-between; padding: calc(14px + var(--safe-t)) 20px 14px; border-bottom: 1px solid color-mix(in srgb, var(--c-outline-v) 20%, transparent); }
 .topbar-brand { display: flex; align-items: center; gap: 12px; }
+/* Logo: the plate ring and A take the text color, the redline and crossbar take the PR red. */
+.brand-mark { width: 26px; height: 26px; flex-shrink: 0; color: var(--c-primary); --red: var(--c-pr); }
 .topbar-title { font-family: var(--font-h); font-weight: 700; letter-spacing: -0.025em; font-size: 1.125rem; color: var(--c-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(180px, 45vw); }
 .topbar-settings { color: var(--c-muted); transition: color 0.2s; cursor: pointer; min-width: 44px; min-height: 44px; margin: -10px -10px -10px 0; display: flex; align-items: center; justify-content: center; }
 .topbar-settings:hover { color: var(--c-primary-ctr); }
@@ -609,7 +614,7 @@ body.session-active .bottomnav { display: none; }
 <!-- TOP BAR -->
 <header class="topbar">
   <div class="topbar-brand">
-    <span class="mi">calendar_today</span>
+    <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><path d="M83.61 37.10 A36 36 0 1 1 39.47 15.57" fill="none" stroke="currentColor" stroke-width="15"/><path d="M43.75 14.55 A36 36 0 0 1 81.79 33.10" fill="none" stroke="var(--red)" stroke-width="15"/><path d="M30.00 71.00 L46.40 30.00 L53.60 30.00 L70.00 71.00 L56.50 71.00 L50.00 54.75 L43.50 71.00 Z" fill="currentColor"/><rect x="33.40" y="57" width="33.20" height="6.5" rx="1" fill="var(--red)"/></svg>
     <h1 class="topbar-title" id="headerDate">Apparatus</h1>
   </div>
   <button class="topbar-settings" id="topbarSettings" aria-label="Manage program"><span class="mi" aria-hidden="true">settings</span></button>

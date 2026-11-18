@@ -94,7 +94,9 @@ a program between devices or keep a backup.
 index.html                      the entire app
 sw.js                           service worker (bump CACHE_NAME to ship an update)
 manifest.json                   PWA manifest
-icon-192.png / icon-512.png     app icons
+icon-192.png / icon-512.png     app icons (Plate A logo)
+favicon.svg / favicon-32.png    browser tab icon (simplified cut for small sizes)
+apple-touch-icon.png            iPhone home-screen icon
 programs/*.json                 program definitions
 programs/index.json             ordered list of what ships; first is the default
 tools/embed-program.js          validates them and inlines them into index.html

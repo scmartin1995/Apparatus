@@ -51,5 +51,5 @@ if (/fonts\.g(oogleapis|static)\.com/.test(html)) throw new Error('a font link w
 
 fs.writeFileSync(path.join(assets, 'index.html'), html);
 fs.copyFileSync(path.join(root, 'manifest.json'), path.join(assets, 'manifest.json'));
-['icon-192.png', 'icon-512.png'].forEach(f => fs.copyFileSync(path.join(root, f), path.join(assets, f)));
+['icon-192.png', 'icon-512.png', 'favicon.svg', 'favicon-32.png', 'apple-touch-icon.png'].forEach(f => fs.copyFileSync(path.join(root, f), path.join(assets, f)));
 console.log('bundled web app with ' + sheets.length + ' stylesheets, ' + files + ' font files');
