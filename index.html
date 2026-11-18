@@ -3122,12 +3122,13 @@ window.updateSessionRpe = function(recordId, key, val) {
 // is reset below. 1RM baselines are only ever changed by the user, so a delete
 // leaves them alone.
 const UNDO_MS = 10000;
-let undoDelete = null; // { rec, timer, el }
+let undoDelete = null; // { rec, index, timer, el }
 function finishUndo() {
   if (!undoDelete) return;
-  clearTimeout(undoDelete.timer);
-  if (undoDelete.el && undoDelete.el.parentNode) undoDelete.el.parentNode.removeChild(undoDelete.el);
-  undoDelete = null;
+  const u = undoDelete;
+  undoDelete = null; // first, so the button's blur on removal sees no live toast
+  clearTimeout(u.timer);
+  if (u.el && u.el.parentNode) u.el.parentNode.removeChild(u.el);
 }
 function refreshAfterHistoryChange() {
   // PR marks for lifts with no 1RM are measured against the best in history.
@@ -3147,6 +3148,8 @@ function refreshAfterHistoryChange() {
   render();
 }
 window.deleteSession = function(recordId) {
+  // Pressed with Enter/Space rather than tapped (a keyboard click has detail 0).
+  const viaKeys = !!(window.event && window.event.type === 'click' && window.event.detail === 0);
   const all = getAllSessions(), idx = all.findIndex(s => s.id === recordId);
   if (idx < 0) return;
   const rec = all[idx];
@@ -3168,22 +3171,24 @@ window.deleteSession = function(recordId) {
   el.innerHTML = '<span>Session deleted</span><button type="button" aria-label="Undo delete session">Undo</button>';
   const btn = el.querySelector('button');
   btn.addEventListener('click', undoDeleteSession);
-  // The toast stays while Undo has focus, so it can't time out mid-reach.
-  btn.addEventListener('focus', () => { if (undoDelete) clearTimeout(undoDelete.timer); });
-  btn.addEventListener('blur', () => { if (undoDelete) { clearTimeout(undoDelete.timer); undoDelete.timer = setTimeout(finishUndo, UNDO_MS); } });
+  // While Undo has keyboard focus the countdown waits, so it can't time out
+  // mid-reach. A tap never focuses it, so on a phone it always times out.
+  const mine = () => undoDelete && undoDelete.el === el;
+  btn.addEventListener('focus', () => { if (mine()) clearTimeout(undoDelete.timer); });
+  btn.addEventListener('blur', () => { if (mine()) { clearTimeout(undoDelete.timer); undoDelete.timer = setTimeout(finishUndo, UNDO_MS); } });
   document.getElementById('undoLive').appendChild(el);
-  undoDelete = { rec: rec, el: el, timer: setTimeout(finishUndo, UNDO_MS) };
-  try { btn.focus({ preventScroll: true }); } catch(e) {}
+  // Where it goes back on Undo: its old place, after any trim the save did.
+  undoDelete = { rec: rec, index: Math.max(0, idx - Math.max(0, all.length - SESSION_CAP)), el: el, timer: setTimeout(finishUndo, UNDO_MS) };
+  // The Delete button just went away; a keyboard user lands on Undo.
+  if (viaKeys) { try { btn.focus({ preventScroll: true }); } catch(e) {} }
 };
 function undoDeleteSession() {
   if (!undoDelete) return;
   const u = undoDelete, all = getAllSessions();
   if (!all.some(s => s.id === u.rec.id)) {
-    // Back in date order: suggested weights read the list from the end.
-    const t = new Date(u.rec.date).getTime();
-    let at = all.findIndex(s => new Date(s.date).getTime() > t);
-    if (at < 0) at = all.length;
-    all.splice(at, 0, u.rec);
+    // Its old position: new sessions only ever go on the end, so this keeps
+    // the order the suggested weights read from.
+    all.splice(Math.min(u.index, all.length), 0, u.rec);
     if (!saveAllSessions(all)) { alert('Could not restore the session — browser storage is full or unavailable.'); return; }
   }
   finishUndo();
