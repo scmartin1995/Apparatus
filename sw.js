@@ -1,6 +1,6 @@
 // ── APPARATUS SERVICE WORKER ───────────────────────────────
 // No manual path config needed. Paths auto-derived from SW scope.
-const CACHE_NAME = 'apparatus-v14';
+const CACHE_NAME = 'apparatus-v16';
 
 // The icon and text fonts come from Google. Without them cached, every icon
 // renders as its text name offline.
