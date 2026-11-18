@@ -1,6 +1,6 @@
 // ── APPARATUS SERVICE WORKER ───────────────────────────────
 // No manual path config needed. Paths auto-derived from SW scope.
-const CACHE_NAME = 'apparatus-v23';
+const CACHE_NAME = 'apparatus-v24';
 
 // Gives up on a network request after ms, so a dead or crawling connection
 // can't stall the app (or a service worker update) indefinitely.

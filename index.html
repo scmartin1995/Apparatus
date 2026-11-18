@@ -1969,7 +1969,7 @@ let PROGRAM  = null;
 let DAYS     = [];
 let BASELINES = [];
 let activeDay = 'off';
-const openSections = {};
+const openSections = {}; // in-memory only: every section starts open on each launch; a collapse lasts until the app reloads
 let editingBaselineId = null;
 let session = null;
 let sessionTimerInt = null;
@@ -2119,8 +2119,11 @@ function storedProgram() {
   try { const p = sanitizeProgram(loadStoredProgram()); return (p && p.days.length) ? p : null; } catch(e) { return null; }
 }
 function isLockedActive() { return !storedProgram(); }
+// Forget collapse choices when the program changes, so a new program starts fully open.
+function resetOpenSections() { Object.keys(openSections).forEach(k => { delete openSections[k]; }); }
 function initProgramState() {
   // An imported program overrides the selected built-in.
+  resetOpenSections();
   const base = storedProgram() || selectedBuiltIn();
   PROGRAM = base ? clone(base) : null;
   if (!PROGRAM) { DAYS = []; BASELINES = []; activeDay = 'off'; return; }
@@ -3521,6 +3524,7 @@ function handleProgramFile(file) {
       // The program being replaced goes to Saved Programs instead of being lost.
       if (!commitPrograms(shelve(storedProgram(), program.id), program)) throw new Error('browser storage is full or unavailable, so the program could not be saved. Nothing was changed.');
       PROGRAM = program; DAYS = program.days; BASELINES = program.baselines;
+      resetOpenSections();
       const todayId = program.weekdayMap ? program.weekdayMap[new Date().getDay()] : null;
       activeDay = todayId || (DAYS[0] ? DAYS[0].id : 'off');
       carryOverBaselines(prevBaselines);
@@ -3635,7 +3639,7 @@ function render() {
 
   const sectionsHtml = day.sections.map((sec, si) => {
     const key = day.id + '-' + si;
-    if (!(key in openSections)) openSections[key] = si < 3;
+    if (!(key in openSections)) openSections[key] = true;
     const isOpen = openSections[key];
     const isAr7 = !!sec.ar7;
     const iconStyle = isAr7 ? 'color:' + ac(day.accent) + ';font-variation-settings:\'FILL\' 1,\'wght\' 400,\'GRAD\' 0,\'opsz\' 24' : 'color:var(--c-on-surface-v)';
