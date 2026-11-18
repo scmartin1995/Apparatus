@@ -342,6 +342,11 @@ details[open] .section-caret { transform: rotate(180deg); }
 .builtin-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .builtin-name { font-family: var(--font-h); font-weight: 700; font-size: 0.9375rem; color: var(--c-on-surface); }
 .builtin-meta { font-family: var(--font-b); font-size: 0.75rem; color: var(--c-on-surface-v); }
+.saved-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.625rem; }
+.saved-row .builtin-row { flex: 1; min-width: 0; margin-bottom: 0; }
+.saved-row .builtin-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-del { flex-shrink: 0; }
+.saved-del:hover { color: var(--c-error); }
 .import-section-title { font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); margin-bottom: 1rem; margin-top: 2rem; }
 .upload-zone { background: var(--c-surface-ctr); border: 2px dashed color-mix(in srgb, var(--c-outline-v) 40%, transparent); border-radius: var(--r-lg); padding: 2.5rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
 .upload-zone:hover, .upload-zone.drag-over { border-color: var(--c-primary-ctr); background: color-mix(in srgb, var(--c-primary-ctr) 4%, transparent); }
@@ -816,6 +821,8 @@ const LS_BUILTIN   = 'apparatus_builtin';
 const LS_TIMER     = 'apparatus_timer';
 const LS_BW        = 'apparatus_bodyweight';
 const LS_THEME     = 'apparatus_theme';
+const LS_LIBRARY   = 'apparatus_library';
+const LIBRARY_CAP  = 5;
 const SESSION_CAP  = 400;
 
 // ── BUILT-IN PROGRAMS ─────────────────────────────────────────
@@ -1957,6 +1964,70 @@ function clearProgram() {
   try { localStorage.removeItem(LS_PROGRAM); } catch(e) {}
   initProgramState();
 }
+// Imported programs that aren't active, newest first, so importing or
+// switching keeps them. Capped; past the cap the oldest drops off, and a
+// program imported under the same file name replaces the saved one.
+// 1RMs stay keyed by program id, so they come back with the program.
+function loadLibrary() {
+  try {
+    const list = JSON.parse(localStorage.getItem(LS_LIBRARY) || '[]');
+    if (!Array.isArray(list)) return [];
+    const seen = {};
+    return list.map(p => {
+      try {
+        const q = sanitizeProgram(p);
+        // An import from before built-ins were bundled can share a built-in's
+        // id; give it its own id rather than hide it.
+        if (q && builtInById(q.id)) q.id += '-import';
+        return (q && q.days.length) ? q : null;
+      } catch(e) { return null; }
+    }).filter(p => p && !seen[p.id] && (seen[p.id] = true));
+  } catch(e) { return []; }
+}
+function writeLibrary(list) {
+  try { localStorage.setItem(LS_LIBRARY, JSON.stringify(list.slice(0, LIBRARY_CAP))); return true; } catch(e) { return false; }
+}
+// Saves the library and then makes `next` the active imported program (or
+// clears it when next is null), putting back the old library if either write
+// fails so a full storage never loses a program.
+function commitPrograms(list, next) {
+  let oldLib = null;
+  try { oldLib = localStorage.getItem(LS_LIBRARY); } catch(e) {}
+  if (!writeLibrary(list)) return false;
+  const ok = next ? saveProgram(next) : (function() { try { localStorage.removeItem(LS_PROGRAM); return true; } catch(e) { return false; } })();
+  if (!ok) {
+    try { if (oldLib == null) localStorage.removeItem(LS_LIBRARY); else localStorage.setItem(LS_LIBRARY, oldLib); } catch(e) {}
+    return false;
+  }
+  return true;
+}
+// The library with `keep` (the program being replaced) shelved on top and
+// `drop` (the program about to become active) taken out.
+function shelve(keep, dropId) {
+  if (keep && builtInById(keep.id)) keep = Object.assign({}, keep, { id: keep.id + '-import' });
+  const list = loadLibrary().filter(p => p.id !== dropId && (!keep || p.id !== keep.id));
+  if (keep && keep.id !== dropId) list.unshift(keep);
+  return list;
+}
+const STORAGE_FULL_MSG = 'Browser storage is full, so nothing was changed.';
+let importDoneTimer = null, lastSwitchAt = 0;
+// Called before any program switch: drops a pending close of Manage Program
+// from a just-finished import, and ignores the second tap of a double tap
+// (the list re-renders under the finger with the old program in its place).
+function switchAllowed() {
+  const now = Date.now();
+  if (now - lastSwitchAt < 500) return false;
+  lastSwitchAt = now;
+  if (importDoneTimer) { clearTimeout(importDoneTimer); importDoneTimer = null; }
+  return true;
+}
+// Shelving one more program past the cap drops the oldest, so say so first.
+function confirmShelve(keep) {
+  if (!keep) return true;
+  const list = loadLibrary().filter(p => p.id !== keep.id);
+  if (list.length < LIBRARY_CAP) return true;
+  return confirm('Saved Programs holds ' + LIBRARY_CAP + '. Keeping ' + keep.name + ' removes the oldest, ' + list[list.length - 1].name + '. Continue?');
+}
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
 // Program text is user-supplied (CSV/JSON import), so it is escaped wherever
 // it is written into HTML.
@@ -2272,8 +2343,30 @@ function saveBaselines(data) {
   } catch(e) {}
 }
 
+// The 1RMs of the active program that are the user's own: everything on an
+// imported program (its numbers came from the user's file or their edits),
+// but on a built-in only what the user entered, never its preset numbers.
+function isPresetCopy(id, lift, orm) {
+  const s = slugify(lift || '');
+  return BUILT_IN_PROGRAMS.some(p => (p.baselines || []).some(d => d.orm === orm && (d.id === id || slugify(d.lift || '') === s)));
+}
+function userOwnBaselines() {
+  const all = loadBaselines();
+  // Before this fix an import copied a built-in's preset 1RMs onto lifts with
+  // the same id or name, so on an imported program a value equal to a preset
+  // for that lift is not passed on to the next import. It stays where it is.
+  if (!builtInById(currentProgramId())) return all.filter(b => !isPresetCopy(b.id, b.lift, b.orm));
+  const own = readBaselineMap()[currentProgramId()] || [];
+  // Older versions stored the whole list, presets included, so a stored value
+  // equal to the preset is treated as the preset, as saveBaselines does.
+  return all.filter(b => {
+    const def = BASELINES.find(d => d.id === b.id);
+    return own.some(o => o.id === b.id && typeof o.orm === 'number') && !(def && def.orm === b.orm);
+  });
+}
 // A freshly imported program starts with blank 1RMs. Fill any it doesn't
-// already have from the program that was active, matched by id or lift name.
+// already have from the user's own 1RMs on the program that was active,
+// matched by id or lift name (see userOwnBaselines).
 function carryOverBaselines(prev) {
   try {
     const map = readBaselineMap(), id = currentProgramId();
@@ -3210,7 +3303,7 @@ function renderImportPage() {
       '<div class="prog-meta-name">' + esc(PROGRAM.name) + (locked ? '<span class="prog-locked-badge">LOCKED</span>' : '') + '</div>' +
       '<div class="prog-meta-detail">' + days.length + ' training day' + (days.length!==1?'s':'') + ' \xB7 ' + origin + '</div>' +
       '<button class="btn-ghost" style="margin-top:1rem;width:100%" onclick="exportProgramJSON()"><span class="mi mi-sm">download</span>Export Program (JSON)</button>' +
-      (locked ? '' : '<button class="btn-ghost" style="margin-top:0.5rem;width:100%;border-color:color-mix(in srgb, var(--c-error) 30%, transparent);color:var(--c-error)" onclick="confirmClearProgram()"><span class="mi mi-sm">restore</span>Restore Built-In Program</button>') +
+      (locked ? '' : '<button class="btn-ghost" style="margin-top:0.5rem;width:100%" onclick="confirmClearProgram()"><span class="mi mi-sm">restore</span>Switch to Built-In Program</button>') +
       '</div>';
   }
   const builtInsHtml = BUILT_IN_PROGRAMS.length < 2 ? '' :
@@ -3222,13 +3315,30 @@ function renderImportPage() {
         return a + d.sections.reduce(function(x, s) { return x + s.items.length; }, 0);
       }, 0);
       return '<button class="builtin-row' + (on ? ' on' : '') + '" onclick="selectBuiltIn(\'' + p.id + '\')">' +
-        '<span class="mi builtin-mark">' + (on ? 'radio_button_checked' : 'radio_button_unchecked') + '</span>' +
+        '<span class="mi builtin-mark" aria-hidden="true">' + (on ? 'radio_button_checked' : 'radio_button_unchecked') + '</span>' +
         '<span class="builtin-text"><span class="builtin-name">' + esc(p.name) + '</span>' +
         '<span class="builtin-meta">' + trainDays + ' training day' + (trainDays !== 1 ? 's' : '') + ' \xB7 ' + lifts + ' exercises</span></span>' +
         '</button>';
     }).join('');
 
-  el.innerHTML = programCardHtml + builtInsHtml +
+  const saved = loadLibrary();
+  const savedHtml = !saved.length ? '' :
+    '<div class="import-section-title">Saved Programs</div>' +
+    saved.map(function(p) {
+      const trainDays = p.days.filter(function(d) { return !d.isOff; }).length;
+      const when = p.importedAt && !isNaN(new Date(p.importedAt)) ? ' \xB7 Imported ' + new Date(p.importedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+      return '<div class="saved-row">' +
+        '<button class="builtin-row" onclick="useSavedProgram(\'' + p.id + '\')">' +
+        '<span class="mi builtin-mark" aria-hidden="true">radio_button_unchecked</span>' +
+        '<span class="builtin-text"><span class="builtin-name">' + esc(p.name) + '</span>' +
+        '<span class="builtin-meta">' + trainDays + ' training day' + (trainDays !== 1 ? 's' : '') + when + '</span></span>' +
+        '</button>' +
+        '<button class="edit-btn saved-del" aria-label="Delete ' + esc(p.name) + '" onclick="deleteSavedProgram(\'' + p.id + '\')"><span class="mi mi-sm" aria-hidden="true">delete</span></button>' +
+        '</div>';
+    }).join('') +
+    '<div class="upload-zone-sub" style="margin:0 0 0.5rem">Your last ' + LIBRARY_CAP + ' imported programs. Switching keeps your history and each program\u2019s 1RMs.</div>';
+
+  el.innerHTML = programCardHtml + builtInsHtml + savedHtml +
     '<div class="import-section-title">Import New Program</div>' +
     '<div class="upload-zone" id="uploadZone" role="button" tabindex="0"><span class="mi upload-zone-icon">upload_file</span><div class="upload-zone-label">Tap to select CSV, JSON or a backup</div><div class="upload-zone-sub">or drag and drop</div></div>' +
     '<input type="file" id="csvFileInput" accept=".csv,.json,text/csv,application/json" style="display:none"/>' +
@@ -3299,15 +3409,16 @@ function handleProgramFile(file) {
       if (!program.days || program.days.length === 0) throw new Error('No valid training days found.');
       // Keep an imported copy from colliding with a built-in's baselines.
       if (builtInById(program.id)) program.id = program.id + '-import';
-      const prevBaselines = loadBaselines();
-      if (!saveProgram(program)) throw new Error('browser storage is full or unavailable, so the program could not be saved.');
+      const prevBaselines = userOwnBaselines();
+      // The program being replaced goes to Saved Programs instead of being lost.
+      if (!commitPrograms(shelve(storedProgram(), program.id), program)) throw new Error('browser storage is full or unavailable, so the program could not be saved. Nothing was changed.');
       PROGRAM = program; DAYS = program.days; BASELINES = program.baselines;
       const todayId = program.weekdayMap ? program.weekdayMap[new Date().getDay()] : null;
       activeDay = todayId || (DAYS[0] ? DAYS[0].id : 'off');
       carryOverBaselines(prevBaselines);
       statusEl.textContent = '\u2713 ' + program.name + ' imported \u2014 ' + DAYS.filter(d=>!d.isOff).length + ' training day' + (DAYS.filter(d=>!d.isOff).length!==1?'s':'') + ' loaded.';
       statusEl.className = 'import-status success';
-      setTimeout(() => { closeImportPage(); render(); renderBaselines(); }, 1200);
+      importDoneTimer = setTimeout(() => { importDoneTimer = null; closeImportPage(); render(); renderBaselines(); }, 1200);
     } catch(err) {
       statusEl.textContent = '\u2715 Import failed: ' + err.message;
       statusEl.className = 'import-status error';
@@ -3318,19 +3429,41 @@ function handleProgramFile(file) {
 }
 window.confirmClearProgram = function() {
   if (programLockedBySession()) return;
-  const back = selectedBuiltIn();
-  if (!confirm('Restore ' + (back ? back.name : 'the built-in program') + '? The imported program is removed. Session history and 1RM baselines are kept.')) return;
-  clearProgram(); renderImportPage(); render(); renderBaselines();
+  if (!confirmShelve(storedProgram()) || !switchAllowed()) return;
+  // The imported program moves to Saved Programs, so this needs no confirm.
+  if (!commitPrograms(shelve(storedProgram(), null), null)) { alert(STORAGE_FULL_MSG); return; }
+  initProgramState(); renderImportPage(); render(); renderBaselines();
+};
+
+window.useSavedProgram = function(id) {
+  if (programLockedBySession()) return;
+  const p = loadLibrary().find(x => x.id === id);
+  if (!p || !switchAllowed()) return;
+  if (!commitPrograms(shelve(storedProgram(), p.id), p)) { alert(STORAGE_FULL_MSG); return; }
+  initProgramState(); renderImportPage(); render(); renderBaselines();
+};
+
+window.deleteSavedProgram = function(id) {
+  const list = loadLibrary(), p = list.find(x => x.id === id);
+  if (!p) return;
+  if (!confirm('Delete ' + p.name + ' from Saved Programs? Your session history is kept.')) return;
+  const at = list.findIndex(x => x.id === id);
+  if (!writeLibrary(list.filter(x => x.id !== id))) { alert(STORAGE_FULL_MSG); return; }
+  renderImportPage();
+  // Keep focus in the list instead of dropping it to the page.
+  const rows = document.querySelectorAll('.saved-row .builtin-row');
+  const next = rows[Math.min(at, rows.length - 1)] || document.getElementById('uploadZone');
+  if (next) next.focus();
 };
 
 window.selectBuiltIn = function(id) {
   const p = builtInById(id);
   if (!p) return;
   if (programLockedBySession()) return;
-  // Picking a built-in drops any imported program, so say so first.
-  if (loadStoredProgram() && !confirm('Switch to ' + p.name + '? The imported program will be removed. Session history and 1RM baselines are kept.')) return;
+  // Any imported program moves to Saved Programs rather than being dropped.
+  if (!confirmShelve(storedProgram()) || !switchAllowed()) return;
+  if (!commitPrograms(shelve(storedProgram(), null), null)) { alert(STORAGE_FULL_MSG); return; }
   try { localStorage.setItem(LS_BUILTIN, id); } catch(e) {}
-  try { localStorage.removeItem(LS_PROGRAM); } catch(e) {}
   initProgramState();
   renderImportPage(); render(); renderBaselines();
 };
