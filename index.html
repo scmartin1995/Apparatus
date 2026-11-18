@@ -2638,7 +2638,7 @@ function saveAllSessions(arr) {
 function addSessionRecord(rec) { const all = getAllSessions(); all.push(rec); return saveAllSessions(all); }
 function sessionsByDay(dt) { return getAllSessions().filter(s => s.dayType === dt).sort((a,b) => new Date(a.date) - new Date(b.date)); }
 function lastScoreForDay(dt) { const arr = sessionsByDay(dt); return arr.length ? arr[arr.length-1].score.total : null; }
-function saveDraft() { if (!session) return; try { localStorage.setItem(LS_DRAFT, JSON.stringify(session)); } catch(e) {} }
+function saveDraft() { if (!session) return true; try { localStorage.setItem(LS_DRAFT, JSON.stringify(session)); return true; } catch(e) { return false; } }
 function loadDraft() { try { const d = localStorage.getItem(LS_DRAFT); return d ? cleanSession(JSON.parse(d), true) : null; } catch(e) { return null; } }
 function clearDraft() { try { localStorage.removeItem(LS_DRAFT); } catch(e) {} }
 
@@ -3798,15 +3798,22 @@ render = function() { _origRender(); requestAnimationFrame(syncLayoutVars); };
 // running, otherwise offer a Reload button so a set in progress isn't lost.
 if ('serviceWorker' in navigator) {
   let hadController = !!navigator.serviceWorker.controller;
-  let reloading = false, lastCheck = 0;
+  let reloading = false, lastCheck = 0, pendingUpdate = false;
   const reloadNow = () => { if (reloading) return; reloading = true; location.reload(); };
+  // Don't pull someone out of a session, a page or a half-filled dialog.
+  const isBusy = () => !!(session || timerState === 'running' || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open'));
   const showUpdateBanner = () => {
+    pendingUpdate = true;
     if (document.getElementById('updateBanner')) return;
     const bar = document.createElement('div');
     bar.id = 'updateBanner'; bar.className = 'update-banner'; bar.setAttribute('role', 'status');
     const msg = document.createElement('span'); msg.textContent = 'A new version is ready.';
     const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = 'Reload';
-    btn.addEventListener('click', () => { saveDraft(); reloadNow(); });
+    btn.addEventListener('click', () => {
+      // Only reload once the session in progress is safely saved.
+      if (saveDraft()) reloadNow();
+      else alert('Your phone is out of storage space, so this workout could not be saved. Finish it first, then reload.');
+    });
     const later = document.createElement('button'); later.type = 'button'; later.className = 'update-later';
     later.textContent = 'Later'; later.addEventListener('click', () => bar.remove());
     bar.appendChild(msg); bar.appendChild(later); bar.appendChild(btn); document.body.appendChild(bar);
@@ -3814,9 +3821,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     // First install: nothing to refresh, but later updates in this page should count.
     if (!hadController) { hadController = true; return; }
-    // Don't pull someone out of a session, a page or a half-filled dialog.
-    const busy = session || timerState === 'running' || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open');
-    if (busy) showUpdateBanner(); else reloadNow();
+    if (isBusy()) showUpdateBanner(); else reloadNow();
   });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
@@ -3825,7 +3830,12 @@ if ('serviceWorker' in navigator) {
         lastCheck = Date.now(); reg.update().catch(() => { lastCheck = 0; }); // offline: try again next time
       };
       check();
-      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        // An update waved off with Later applies the next time the app is opened while idle.
+        if (pendingUpdate && !isBusy()) { reloadNow(); return; }
+        check();
+      });
     }).catch(() => {});
   });
 }
