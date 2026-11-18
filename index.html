@@ -3812,7 +3812,7 @@ if ('serviceWorker' in navigator) {
     btn.addEventListener('click', () => {
       // Only reload once the session in progress is safely saved.
       if (saveDraft()) reloadNow();
-      else alert('Your phone is out of storage space, so this workout could not be saved. Finish it first, then reload.');
+      else if (confirm('Your phone is out of storage space, so the sets you logged since it filled up could not be saved. Free up some space first to keep them, or reload now and lose them. Reload anyway?')) reloadNow();
     });
     const later = document.createElement('button'); later.type = 'button'; later.className = 'update-later';
     later.textContent = 'Later'; later.addEventListener('click', () => bar.remove());
