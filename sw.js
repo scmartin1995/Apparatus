@@ -52,7 +52,7 @@ self.addEventListener('install', event => {
       // download below can't leave the icons missing offline after an update.
       try {
         for (const key of await caches.keys()) {
-          if (key === CACHE_NAME) continue;
+          if (key === CACHE_NAME || !key.startsWith('apparatus-')) continue;
           const old = await caches.open(key);
           for (const req of await old.keys()) {
             if (!FONT_HOSTS.includes(new URL(req.url).hostname)) continue;
@@ -67,6 +67,18 @@ self.addEventListener('install', event => {
         const res = await fetch(url, { cache: 'no-cache' });
         if (res.ok) await cache.put(url, res);
       }));
+      // A file that failed to download keeps the previous version's copy,
+      // so the app still opens offline after an update on a bad connection.
+      try {
+        const olds = (await caches.keys()).filter(k => k !== CACHE_NAME && k.startsWith('apparatus-'));
+        for (const url of shell) {
+          if (await cache.match(url)) continue;
+          for (const key of olds) {
+            const prev = await (await caches.open(key)).match(url);
+            if (prev) { await cache.put(url, prev); break; }
+          }
+        }
+      } catch (e) {}
       // Bounded: if Google Fonts hangs, install still finishes, so the new
       // version activates instead of leaving people stuck on the old one.
       try { await withTimeout(cacheFonts(cache, base), 10000); } catch (e) {}
@@ -80,7 +92,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
-        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+        keys.filter(k => k !== CACHE_NAME && k.startsWith('apparatus-')).map(k => caches.delete(k))
       ))
       .then(() => self.clients.claim())
   );
