@@ -45,6 +45,8 @@ sheets.forEach((sheet, i) => {
   fs.writeFileSync(path.join(assets, local), css);
   html = html.split(sheet).join(local);
 });
+// The APK bundles its fonts, so its security policy doesn't need the Google hosts.
+html = html.replace(/ https:\/\/fonts\.g(?:oogleapis|static)\.com(?=[;"])/g, '');
 if (/fonts\.g(oogleapis|static)\.com/.test(html)) throw new Error('a font link was not rewritten');
 
 fs.writeFileSync(path.join(assets, 'index.html'), html);

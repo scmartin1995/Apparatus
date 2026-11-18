@@ -2300,7 +2300,7 @@ function parseSetsStr(setsStr) {
   const m = base.match(/(\d+)\s*[×x]\s*(\d+)(?:[\u2013\-](\d+))?/);
   if (!m) return { numSets: 1, repLow: 1, repHigh: 1 };
   // Capped so a typo like "500 × 5" in an imported program can't build hundreds of inputs.
-  const n = v => Math.min(Math.max(parseInt(v) || 1, 1), 100);
+  const n = v => Math.min(Math.max(parseInt(v) || 1, 1), 1000);
   const numSets = Math.min(n(m[1]), 20), repLow = n(m[2]), repHigh = m[3] ? Math.max(n(m[3]), repLow) : repLow;
   return { numSets: numSets, repLow: repLow, repHigh: repHigh };
 }
@@ -2571,7 +2571,7 @@ function diagnosticLine(s, scores) {
 // writes straight into storage, so every record is normalised on the way in:
 // ids that go into inline handlers are safe, numbers are numbers, names are
 // strings. Anything that isn't a usable record is dropped instead of crashing.
-function numStr(v) { const f = parseFloat(v); return isFinite(f) && f >= 0 ? String(f) : ''; }
+function numStr(v) { const f = parseFloat(v); return isFinite(f) ? String(f) : ''; }
 function cleanSets(sets) {
   return (Array.isArray(sets) ? sets : []).slice(0, 50).map(st => ({ weight: numStr(st && st.weight), reps: numStr(st && st.reps) }));
 }
@@ -2583,7 +2583,7 @@ function cleanGroup(g, kind) {
     if (!/^\d+-\d+$/.test(k) || !it || typeof it !== 'object') return;
     const t = it.target || {};
     const c = { name: String(it.name == null ? '' : it.name), note: String(it.note == null ? '' : it.note), setsStr: String(it.setsStr == null ? '' : it.setsStr),
-      target: (function() { const pos = v => Math.min(Math.max(parseInt(v) || 1, 1), 100), lo = pos(t.repLow); return { numSets: Math.min(pos(t.numSets), 20), repLow: lo, repHigh: Math.max(pos(t.repHigh || t.repLow), lo) }; })() };
+      target: (function() { const pos = v => Math.min(Math.max(parseInt(v) || 1, 1), 1000), lo = pos(t.repLow); return { numSets: Math.min(pos(t.numSets), 20), repLow: lo, repHigh: Math.max(pos(t.repHigh || t.repLow), lo) }; })() };
     if (typeof it.prBase === 'number' && isFinite(it.prBase)) c.prBase = it.prBase;
     if (kind === 'ar7') { c.weight = numStr(it.weight); c.rounds = Math.min(Math.max(parseInt(it.rounds) || 0, 0), 7); }
     else { c.bw = !!it.bw; c.sets = cleanSets(it.sets); if (kind === 'acc') c.rpe = Math.min(Math.max(parseInt(it.rpe) || 0, 0), 5); }
@@ -2619,7 +2619,13 @@ function cleanSession(s, isDraft) {
 function getAllSessions() {
   let raw;
   try { raw = JSON.parse(localStorage.getItem(LS_SESSIONS) || '[]'); } catch(e) { return []; }
-  return Array.isArray(raw) ? raw.map(x => cleanSession(x, false)).filter(Boolean) : [];
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  return raw.map(x => cleanSession(x, false)).filter(Boolean).map(s => {
+    let id = s.id, n = 2;
+    while (seen.has(id)) id = s.id + '-' + n++;
+    seen.add(id); s.id = id; return s;
+  });
 }
 function saveAllSessions(arr) {
   if (arr.length > SESSION_CAP) arr = arr.slice(-SESSION_CAP);
@@ -3723,7 +3729,8 @@ document.getElementById('modalReps').addEventListener('keyup', e => { if(e.key==
 function closeTopLayer() {
   const open = id => document.getElementById(id).classList.contains('open');
   if (open('timerSettingsOverlay')) { closeTimerSettings(); return true; }
-  if (open('draftModal')) { document.getElementById('draftModal').classList.remove('open'); return true; }
+  // The resume prompt needs an answer: dismissing it and then starting a session would overwrite the saved one.
+  if (open('draftModal')) return true;
   if (open('baselineModal')) { closeBaselineModal(); return true; }
   if (open('summaryPage')) { closeSummary(); return true; }
   if (open('historyPage')) { closeHistoryPage(); return true; }
@@ -3802,7 +3809,7 @@ if ('serviceWorker' in navigator) {
     // First install: nothing to refresh, but later updates in this page should count.
     if (!hadController) { hadController = true; return; }
     // Don't pull someone out of a session, a page or a half-filled dialog.
-    const busy = session || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open');
+    const busy = session || timerState === 'running' || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open');
     if (busy) showUpdateBanner(); else reloadNow();
   });
   window.addEventListener('load', () => {
