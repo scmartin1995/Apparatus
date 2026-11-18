@@ -2323,7 +2323,12 @@ function userOwnBaselines() {
   const all = loadBaselines();
   if (!builtInById(currentProgramId())) return all;
   const own = readBaselineMap()[currentProgramId()] || [];
-  return all.filter(b => own.some(o => o.id === b.id && typeof o.orm === 'number'));
+  // Older versions stored the whole list, presets included, so a stored value
+  // equal to the preset is treated as the preset, as saveBaselines does.
+  return all.filter(b => {
+    const def = BASELINES.find(d => d.id === b.id);
+    return own.some(o => o.id === b.id && typeof o.orm === 'number') && !(def && def.orm === b.orm);
+  });
 }
 // A freshly imported program starts with blank 1RMs. Fill any it doesn't
 // already have from the user's own 1RMs on the program that was active,
