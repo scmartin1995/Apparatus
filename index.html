@@ -162,6 +162,8 @@ details > summary::-webkit-details-marker { display: none; }
 /* ── SLIDE PAGES ──────────────────────────────────────────── */
 .slide-page { position: fixed; inset: 0; background: var(--c-surface); z-index: 200; transform: translateX(100%); transition: transform 0.25s ease; overflow-y: auto; }
 .slide-page.open { transform: translateX(0); }
+/* A session opened from History slides in over it. */
+#summaryPage { z-index: 210; }
 .slide-header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--c-surface) 80%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: space-between; padding: calc(16px + var(--safe-t)) 24px 16px; border-bottom: 1px solid color-mix(in srgb, var(--c-outline-v) 20%, transparent); }
 .slide-header-brand { display: flex; align-items: center; gap: 12px; }
 .slide-title { font-family: var(--font-h); font-weight: 700; letter-spacing: -0.025em; font-size: 1.25rem; color: var(--c-primary); }
