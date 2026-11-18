@@ -809,6 +809,8 @@ body.session-active .bottomnav { display: none; }
   <button id="navNotes" class="nav-btn"><span class="mi">description</span><span class="nav-btn-label">Program</span></button>
 </nav>
 
+<div id="undoLive" role="status" aria-live="polite"></div>
+
 <script>
 (function(){
 'use strict';
@@ -3113,11 +3115,14 @@ window.updateSessionRpe = function(recordId, key, val) {
   refreshEditLog(rec);
 };
 // ── SESSION DELETE ─────────────────────────────────────────
-// Everything built from history (last-time weights, suggested loads, PR checks,
-// trends, the deload nudge, the last-score badge) is worked out from the stored
-// sessions each time it's shown, so removing the record is enough. 1RM
-// baselines are only ever changed by the user, so a delete leaves them alone.
-let undoDelete = null; // { rec, index, timer, el }
+// Everything built from history (last-time weights, suggested loads, trends,
+// the deload nudge, the last-score badge) is worked out from the stored
+// sessions each time it's shown, so removing the record is enough. The one
+// cached value is an open workout's PR mark when it came from history, which
+// is reset below. 1RM baselines are only ever changed by the user, so a delete
+// leaves them alone.
+const UNDO_MS = 10000;
+let undoDelete = null; // { rec, timer, el }
 function finishUndo() {
   if (!undoDelete) return;
   clearTimeout(undoDelete.timer);
@@ -3125,6 +3130,14 @@ function finishUndo() {
   undoDelete = null;
 }
 function refreshAfterHistoryChange() {
+  // PR marks for lifts with no 1RM are measured against the best in history.
+  if (session) {
+    [session.primaries, session.accessories].forEach(g => Object.keys(g).forEach(k => {
+      const item = sessionItem(k), b = item && liftBaseline(item);
+      if (!(b && b.orm > 0)) delete g[k].prBase;
+    }));
+    saveDraft();
+  }
   if (document.getElementById('historyPage').classList.contains('open')) {
     // A deleted session might have been the only one behind the active chip.
     const ids = getAllSessions().map(s => s.dayType);
@@ -3148,18 +3161,29 @@ window.deleteSession = function(recordId) {
   refreshAfterHistoryChange();
   // Only the latest delete can be undone; an earlier one is final once replaced.
   finishUndo();
+  // Added inside a live region that is already on the page, so screen readers
+  // announce it; focus moves to Undo because the Delete button just went away.
   const el = document.createElement('div');
-  el.className = 'undo-toast'; el.setAttribute('role', 'status');
+  el.className = 'undo-toast';
   el.innerHTML = '<span>Session deleted</span><button type="button" aria-label="Undo delete session">Undo</button>';
-  el.querySelector('button').addEventListener('click', undoDeleteSession);
-  document.body.appendChild(el);
-  undoDelete = { rec: rec, index: idx, el: el, timer: setTimeout(finishUndo, 8000) };
+  const btn = el.querySelector('button');
+  btn.addEventListener('click', undoDeleteSession);
+  // The toast stays while Undo has focus, so it can't time out mid-reach.
+  btn.addEventListener('focus', () => { if (undoDelete) clearTimeout(undoDelete.timer); });
+  btn.addEventListener('blur', () => { if (undoDelete) { clearTimeout(undoDelete.timer); undoDelete.timer = setTimeout(finishUndo, UNDO_MS); } });
+  document.getElementById('undoLive').appendChild(el);
+  undoDelete = { rec: rec, el: el, timer: setTimeout(finishUndo, UNDO_MS) };
+  try { btn.focus({ preventScroll: true }); } catch(e) {}
 };
 function undoDeleteSession() {
   if (!undoDelete) return;
   const u = undoDelete, all = getAllSessions();
   if (!all.some(s => s.id === u.rec.id)) {
-    all.splice(Math.min(u.index, all.length), 0, u.rec);
+    // Back in date order: suggested weights read the list from the end.
+    const t = new Date(u.rec.date).getTime();
+    let at = all.findIndex(s => new Date(s.date).getTime() > t);
+    if (at < 0) at = all.length;
+    all.splice(at, 0, u.rec);
     if (!saveAllSessions(all)) { alert('Could not restore the session — browser storage is full or unavailable.'); return; }
   }
   finishUndo();
@@ -3933,6 +3957,8 @@ function closeTopLayer() {
   if (open('importPage')) { closeImportPage(); return true; }
   if (open('strengthPage')) { closeStrengthPage(); return true; }
   if (open('progPage')) { closeProgPage(); return true; }
+  // Back with the Undo toast up just dismisses it (the delete stays).
+  if (document.querySelector('.undo-toast')) { finishUndo(); return true; }
   return false;
 }
 window.apparatusBack = closeTopLayer;
@@ -3993,7 +4019,7 @@ if ('serviceWorker' in navigator) {
   let reloading = false, lastCheck = 0, pendingUpdate = false;
   const reloadNow = () => { if (reloading) return; reloading = true; location.reload(); };
   // Don't pull someone out of a session, a page or a half-filled dialog.
-  const isBusy = () => !!(session || timerState === 'running' || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open'));
+  const isBusy = () => !!(session || timerState === 'running' || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open, .undo-toast'));
   const showUpdateBanner = () => {
     pendingUpdate = true;
     if (document.getElementById('updateBanner')) return;
