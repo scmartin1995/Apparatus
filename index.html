@@ -578,6 +578,11 @@ body.session-active .bottomnav { display: none; }
 /* ── SESSION EDIT LOG ─────────────────────────────────────── */
 .edit-log-toggle { width:100%; margin-top:20px; background:var(--c-surface-low); border:1px solid color-mix(in srgb, var(--c-outline-v) 25%, transparent); color:var(--c-on-surface-v); font-family:var(--font-h); font-weight:700; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.2em; padding:12px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; gap:8px; transition:border-color 0.2s,color 0.2s; }
 .edit-log-toggle:hover { border-color:var(--c-outline); color:var(--c-on-surface); }
+.btn-delete-session { margin-top: 12px; min-height: 44px; border-color: color-mix(in srgb, var(--c-error) 30%, transparent); color: var(--c-error); }
+.btn-delete-session:hover { border-color: var(--c-error); color: var(--c-error); }
+.undo-toast { position: fixed; left: 1rem; right: 1rem; bottom: calc(96px + var(--safe-b)); z-index: 450; max-width: 40rem; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; background: var(--c-surface-high); color: var(--c-on-surface); border: 1px solid color-mix(in srgb, var(--c-outline-v) 35%, transparent); border-radius: var(--r-lg); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); font-size: 0.875rem; }
+.undo-toast span { flex: 1; }
+.undo-toast button { border: 0; min-height: 44px; min-width: 44px; padding: 0 18px; border-radius: var(--r-md); background: transparent; color: var(--c-primary-ctr); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; cursor: pointer; }
 .edit-log-section { margin-top:12px; display:flex; flex-direction:column; gap:10px; }
 .edit-log-group { background:var(--c-surface-ctr); border-radius:var(--r-lg); padding:12px 16px 14px; }
 .edit-log-group-hdr { display:flex; align-items:baseline; gap:8px; margin-bottom:10px; }
@@ -2940,7 +2945,8 @@ function renderSummary(record) {
     '<button id="editLogToggle" class="edit-log-toggle" onclick="toggleEditLog(\'' + record.id + '\')">' +
     '<span class="mi mi-sm" style="font-variation-settings:FILL 0,wght 400,GRAD 0,opsz 24">edit</span>Edit Log</button>' +
     '<div id="editLogSection" class="edit-log-section" style="display:none">' + renderEditLog(record) + '</div>' +
-    feelHtml;
+    feelHtml +
+    '<button class="btn-ghost btn-delete-session" onclick="deleteSession(\'' + record.id + '\')"><span class="mi mi-sm" aria-hidden="true">delete</span>Delete Session</button>';
   animateScoreRing(sc.total);
 }
 function renderFeelSurvey(record) {
@@ -3106,6 +3112,59 @@ window.updateSessionRpe = function(recordId, key, val) {
   updateSummaryScoreDisplay(rec);
   refreshEditLog(rec);
 };
+// ── SESSION DELETE ─────────────────────────────────────────
+// Everything built from history (last-time weights, suggested loads, PR checks,
+// trends, the deload nudge, the last-score badge) is worked out from the stored
+// sessions each time it's shown, so removing the record is enough. 1RM
+// baselines are only ever changed by the user, so a delete leaves them alone.
+let undoDelete = null; // { rec, index, timer, el }
+function finishUndo() {
+  if (!undoDelete) return;
+  clearTimeout(undoDelete.timer);
+  if (undoDelete.el && undoDelete.el.parentNode) undoDelete.el.parentNode.removeChild(undoDelete.el);
+  undoDelete = null;
+}
+function refreshAfterHistoryChange() {
+  if (document.getElementById('historyPage').classList.contains('open')) {
+    // A deleted session might have been the only one behind the active chip.
+    const ids = getAllSessions().map(s => s.dayType);
+    if (historyFilter !== 'all' && !DAYS.some(d => d.id === historyFilter && !d.isOff) && ids.indexOf(historyFilter) < 0) historyFilter = 'all';
+    buildHistoryChips(); renderHistoryPage();
+  }
+  render();
+}
+window.deleteSession = function(recordId) {
+  const all = getAllSessions(), idx = all.findIndex(s => s.id === recordId);
+  if (idx < 0) return;
+  const rec = all[idx];
+  const day = DAYS.find(d => d.id === rec.dayType);
+  const when = new Date(rec.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (!confirm('Delete the ' + (day ? day.label : rec.dayType.toUpperCase()) + ' session from ' + when + '? Its score and logged sets are removed from History.')) return;
+  all.splice(idx, 1);
+  if (!saveAllSessions(all)) { alert('Could not delete this session — browser storage is unavailable. Nothing was changed.'); return; }
+  if (window._feelDraft && window._feelDraft.recordId === recordId) window._feelDraft = null;
+  if (lastSummary && lastSummary.id === recordId) lastSummary = null;
+  closeSummary();
+  refreshAfterHistoryChange();
+  // Only the latest delete can be undone; an earlier one is final once replaced.
+  finishUndo();
+  const el = document.createElement('div');
+  el.className = 'undo-toast'; el.setAttribute('role', 'status');
+  el.innerHTML = '<span>Session deleted</span><button type="button" aria-label="Undo delete session">Undo</button>';
+  el.querySelector('button').addEventListener('click', undoDeleteSession);
+  document.body.appendChild(el);
+  undoDelete = { rec: rec, index: idx, el: el, timer: setTimeout(finishUndo, 8000) };
+};
+function undoDeleteSession() {
+  if (!undoDelete) return;
+  const u = undoDelete, all = getAllSessions();
+  if (!all.some(s => s.id === u.rec.id)) {
+    all.splice(Math.min(u.index, all.length), 0, u.rec);
+    if (!saveAllSessions(all)) { alert('Could not restore the session — browser storage is full or unavailable.'); return; }
+  }
+  finishUndo();
+  refreshAfterHistoryChange();
+}
 window.openSessionSummary = function(id) {
   const rec = getAllSessions().find(function(s){ return s.id === id; });
   if (!rec) return;
