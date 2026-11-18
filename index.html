@@ -2915,7 +2915,11 @@ function renderSessionMode(day) {
 }
 
 // ── RENDER: SUMMARY ────────────────────────────────────────
-function showSummary(record) { renderSummary(record); document.getElementById('summaryPage').classList.add('open'); }
+function showSummary(record) {
+  // Opening another summary makes a pending delete final: the Undo bar would
+  // sit over this page's Delete button, and Undo would leave it stale.
+  finishUndo();
+  renderSummary(record); document.getElementById('summaryPage').classList.add('open'); }
 function closeSummary() { document.getElementById('summaryPage').classList.remove('open'); summaryEditOpen = false; }
 function renderSummary(record) {
   const day = DAYS.find(d => d.id === record.dayType) || { label: record.dayType.toUpperCase(), day: '', accent: '#ece6d8' };
@@ -3171,11 +3175,6 @@ window.deleteSession = function(recordId) {
   el.innerHTML = '<span>Session deleted</span><button type="button" aria-label="Undo delete session">Undo</button>';
   const btn = el.querySelector('button');
   btn.addEventListener('click', undoDeleteSession);
-  // While Undo has keyboard focus the countdown waits, so it can't time out
-  // mid-reach. A tap never focuses it, so on a phone it always times out.
-  const mine = () => undoDelete && undoDelete.el === el;
-  btn.addEventListener('focus', () => { if (mine()) clearTimeout(undoDelete.timer); });
-  btn.addEventListener('blur', () => { if (mine()) { clearTimeout(undoDelete.timer); undoDelete.timer = setTimeout(finishUndo, UNDO_MS); } });
   document.getElementById('undoLive').appendChild(el);
   // Where it goes back on Undo: its old place, after any trim the save did.
   undoDelete = { rec: rec, index: Math.max(0, idx - Math.max(0, all.length - SESSION_CAP)), el: el, timer: setTimeout(finishUndo, UNDO_MS) };
@@ -3190,6 +3189,8 @@ function undoDeleteSession() {
     // the order the suggested weights read from.
     all.splice(Math.min(u.index, all.length), 0, u.rec);
     if (!saveAllSessions(all)) { alert('Could not restore the session — browser storage is full or unavailable.'); return; }
+    // At the 400-session limit the save keeps the newest; say so if that dropped it.
+    if (!getAllSessions().some(s => s.id === u.rec.id)) alert('Could not restore the session — History is at its 400-session limit and this was the oldest.');
   }
   finishUndo();
   refreshAfterHistoryChange();
