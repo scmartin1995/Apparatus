@@ -1,6 +1,6 @@
 // ── APPARATUS SERVICE WORKER ───────────────────────────────
 // No manual path config needed. Paths auto-derived from SW scope.
-const CACHE_NAME = 'apparatus-v17';
+const CACHE_NAME = 'apparatus-v18';
 
 // Gives up on a network request after ms, so a dead or crawling connection
 // can't stall the app (or a service worker update) indefinitely.
@@ -22,7 +22,7 @@ const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 // Reads the stylesheet links out of index.html (so they are listed in one
 // place) and caches each stylesheet plus the font files it points to.
 async function cacheFonts(cache, base) {
-  const html = await (await fetch(base + 'index.html')).text();
+  const html = await (await fetch(base + 'index.html', { cache: 'no-cache' })).text();
   const sheets = (html.match(/https:\/\/fonts\.googleapis\.com\/[^"']+/g) || [])
     .map(u => u.replace(/&amp;/g, '&'));
   await Promise.allSettled(sheets.map(async sheet => {
@@ -49,7 +49,11 @@ self.addEventListener('install', event => {
       ];
       const cache = await caches.open(CACHE_NAME);
       // Cache individually — don't let one missing icon abort install
-      await Promise.allSettled(shell.map(url => cache.add(url)));
+      // Fetch past the HTTP cache so a new worker never stores the old shell.
+      await Promise.allSettled(shell.map(async url => {
+        const res = await fetch(url, { cache: 'no-cache' });
+        if (res.ok) await cache.put(url, res);
+      }));
       // Bounded: if Google Fonts hangs, install still finishes, so the new
       // version activates instead of leaving people stuck on the old one.
       try { await withTimeout(cacheFonts(cache, base), 10000); } catch (e) {}
@@ -105,7 +109,9 @@ self.addEventListener('fetch', event => {
         await caches.match(request, { ignoreSearch: true }) ||
         await caches.match(base + 'index.html') ||
         await caches.match(base);
-      const network = fetch(request).then(res => {
+      // no-cache: revalidate with the server so GitHub Pages' 10-minute
+      // HTTP cache can't hand back yesterday's index.html.
+      const network = fetch(request, { cache: 'no-cache' }).then(res => {
         if (res.ok) put(request, res.clone());
         return res;
       });

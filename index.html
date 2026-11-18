@@ -547,6 +547,10 @@ body.session-active .bottomnav { display: none; }
 .mb-2 { margin-bottom: 0.5rem; }
 .flex-row-between { display: flex; align-items: center; gap: 12px; }
 
+/* ── UPDATE BANNER ─────────────────────────────────────────── */
+.update-banner { position: fixed; left: 1rem; right: 1rem; top: calc(var(--topbar-h, 57px) + 8px); z-index: 150; max-width: 40rem; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; background: var(--c-surface-high); color: var(--c-on-surface); border: 1px solid color-mix(in srgb, var(--c-outline-v) 35%, transparent); border-radius: var(--r-lg); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); font-size: 0.875rem; }
+.update-banner button { border: 0; min-height: 44px; padding: 0 18px; border-radius: var(--r-md); background: var(--c-primary); color: var(--c-on-primary); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; }
+
 /* ── CLOSED LAYERS (out of tab order and screen readers) ── */
 .slide-page { visibility: hidden; transition: transform 0.25s ease, visibility 0s linear 0.25s; }
 .slide-page.open { visibility: visible; transition: transform 0.25s ease, visibility 0s; }
@@ -3776,9 +3780,37 @@ render = function() { _origRender(); requestAnimationFrame(syncLayoutVars); };
   document.getElementById('draftModal').classList.add('open');
 })();
 
+// Updates. A home-screen app is usually resumed, not relaunched, so the
+// browser rarely checks for a new service worker on its own. Check at launch
+// and whenever the app comes back to the foreground (at most every 30 min).
+// When a new version takes over: reload straight away if no session is
+// running, otherwise offer a Reload button so a set in progress isn't lost.
 if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false, lastCheck = 0;
+  const reloadNow = () => { if (reloading) return; reloading = true; location.reload(); };
+  const showUpdateBanner = () => {
+    if (document.getElementById('updateBanner')) return;
+    const bar = document.createElement('div');
+    bar.id = 'updateBanner'; bar.className = 'update-banner'; bar.setAttribute('role', 'status');
+    const msg = document.createElement('span'); msg.textContent = 'A new version is ready.';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = 'Reload';
+    btn.addEventListener('click', () => { saveDraft(); reloadNow(); });
+    bar.appendChild(msg); bar.appendChild(btn); document.body.appendChild(bar);
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return; // first install, nothing to refresh
+    if (!session) reloadNow(); else showUpdateBanner();
+  });
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+      const check = () => {
+        if (Date.now() - lastCheck < 30 * 60 * 1000) return;
+        lastCheck = Date.now(); reg.update().catch(() => {});
+      };
+      check();
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+    }).catch(() => {});
   });
 }
 
