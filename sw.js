@@ -1,6 +1,6 @@
 // ── APPARATUS SERVICE WORKER ───────────────────────────────
 // No manual path config needed. Paths auto-derived from SW scope.
-const CACHE_NAME = 'apparatus-v22';
+const CACHE_NAME = 'apparatus-v23';
 
 // Gives up on a network request after ms, so a dead or crawling connection
 // can't stall the app (or a service worker update) indefinitely.
@@ -46,6 +46,9 @@ self.addEventListener('install', event => {
         base + 'manifest.json',
         base + 'icon-192.png',
         base + 'icon-512.png',
+        base + 'favicon.svg',
+        base + 'favicon-32.png',
+        base + 'apple-touch-icon.png',
       ];
       const cache = await caches.open(CACHE_NAME);
       // Carry the fonts over from the previous version first, so a slow
