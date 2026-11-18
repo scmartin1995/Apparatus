@@ -590,13 +590,18 @@ body.session-active .bottomnav { display: none; }
 .edit-log-group-hdr { display:flex; align-items:baseline; gap:8px; margin-bottom:10px; }
 .edit-log-group-type { font-family:var(--font-b); font-size:0.5625rem; text-transform:uppercase; letter-spacing:0.2em; color:var(--c-on-surface-v); background:var(--c-surface-high); padding:2px 8px; border-radius:var(--r-sm); flex-shrink:0; }
 .edit-log-group-name { font-family:var(--font-h); font-weight:700; font-size:0.8125rem; color:var(--c-on-surface); line-height:1.3; }
-.session-row { width: calc(100% + 12px); min-height: 44px; gap: 12px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--r-md); margin: 0 -6px; padding: 6px 6px 6px 10px; transition: background 0.15s; -webkit-tap-highlight-color: transparent; }
-@media (hover: hover) { .session-row:hover { background: var(--c-surface-ctr); } .session-row:hover .session-row-go { color: var(--c-primary-ctr); } }
-.session-row:active { background: color-mix(in srgb, var(--c-on-surface) 8%, transparent); }
-.session-row-right { display: flex; align-items: center; gap: 2px; }
-.session-row-go { font-size: 20px; color: var(--c-on-surface-v); }
-.session-row:active .session-row-go { color: var(--c-primary-ctr); }
-.history-hint { font-size: 0.75rem; color: var(--c-on-surface-v); margin-top: 6px; }
+.day-card-sessions { gap: 8px; padding-top: 12px; }
+.session-row { width: 100%; min-height: 56px; gap: 12px; background: var(--c-surface-high); border: 1px solid var(--c-outline); color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--r-md); margin: 0; padding: 10px 10px 10px 16px; box-shadow: 0 1px 2px color-mix(in srgb, var(--c-shadow) 12%, transparent); transition: background 0.15s, border-color 0.15s, transform 0.1s; -webkit-tap-highlight-color: transparent; }
+@media (hover: hover) { .session-row:hover { border-color: var(--c-on-surface-v); } }
+.session-row:active { background: var(--c-surface-ctr); border-color: var(--c-on-surface); transform: scale(0.985); }
+.session-row:focus-visible { outline: 2px solid var(--c-on-surface); outline-offset: 2px; }
+.session-row .session-row-date { font-size: 0.9375rem; font-weight: 600; color: var(--c-on-surface); }
+.session-row .session-row-date.today { color: var(--c-primary); }
+.session-row .session-row-score { font-size: 1.125rem; }
+.session-row-right { display: flex; align-items: center; gap: 10px; }
+.session-row-go { display: inline-flex; align-items: center; gap: 2px; padding: 6px 6px 6px 12px; border-radius: 9999px; background: var(--c-on-surface); color: var(--c-surface); font-family: var(--font-h); font-weight: 800; font-size: 0.6875rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.session-row-go .mi { font-size: 20px; }
+.history-hint { display: flex; align-items: center; gap: 8px; font-size: 0.9375rem; font-weight: 600; color: var(--c-on-surface); margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -3252,7 +3257,7 @@ function renderHistoryPage() {
       const d = new Date(s.date), dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       const isToday = new Date().toDateString() === d.toDateString();
       const label = 'Open ' + (day.label || dt) + ' session from ' + (isToday ? 'today, ' : '') + dateStr + ', score ' + s.score.total;
-      rows += '<button type="button" class="session-row" aria-label="' + esc(label) + '" onclick="openSessionSummary(\'' + s.id + '\')"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span><span class="session-row-right"><span class="session-row-score" style="' + (isWarn&&i===0?'color:var(--c-warn)':'') + '">' + s.score.total + '</span><span class="mi session-row-go" aria-hidden="true">chevron_right</span></span></button>';
+      rows += '<button type="button" class="session-row" aria-label="' + esc(label) + '" onclick="openSessionSummary(\'' + s.id + '\')"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span><span class="session-row-right"><span class="session-row-score" style="' + (isWarn&&i===0?'color:var(--c-warn)':'') + '">' + s.score.total + '</span><span class="session-row-go" aria-hidden="true">View<span class="mi">chevron_right</span></span></span></button>';
     });
     html += '<div class="day-card ' + (isWarn?'warn':'') + '"><div class="day-card-header"><div class="day-card-day" style="color:' + ac(day.accent) + '">' + esc(day.label) + (day.day?' \xB7 ' + esc(day.day):'') + '</div><div class="day-card-avg">Avg <strong>' + avg + '</strong> \xB7 ' + arr.length + ' session' + (arr.length===1?'':'s') + '</div></div><div class="sparkline-wrap">' + spark + '</div><div class="day-card-sessions">' + rows + '</div></div>';
   });
