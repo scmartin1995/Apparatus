@@ -162,6 +162,8 @@ details > summary::-webkit-details-marker { display: none; }
 /* ── SLIDE PAGES ──────────────────────────────────────────── */
 .slide-page { position: fixed; inset: 0; background: var(--c-surface); z-index: 200; transform: translateX(100%); transition: transform 0.25s ease; overflow-y: auto; }
 .slide-page.open { transform: translateX(0); }
+/* A session opened from History slides in over it. */
+#summaryPage { z-index: 210; }
 .slide-header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--c-surface) 80%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: space-between; padding: calc(16px + var(--safe-t)) 24px 16px; border-bottom: 1px solid color-mix(in srgb, var(--c-outline-v) 20%, transparent); }
 .slide-header-brand { display: flex; align-items: center; gap: 12px; }
 .slide-title { font-family: var(--font-h); font-weight: 700; letter-spacing: -0.025em; font-size: 1.25rem; color: var(--c-primary); }
@@ -578,6 +580,11 @@ body.session-active .bottomnav { display: none; }
 /* ── SESSION EDIT LOG ─────────────────────────────────────── */
 .edit-log-toggle { width:100%; margin-top:20px; background:var(--c-surface-low); border:1px solid color-mix(in srgb, var(--c-outline-v) 25%, transparent); color:var(--c-on-surface-v); font-family:var(--font-h); font-weight:700; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.2em; padding:12px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; gap:8px; transition:border-color 0.2s,color 0.2s; }
 .edit-log-toggle:hover { border-color:var(--c-outline); color:var(--c-on-surface); }
+.btn-delete-session { margin-top: 12px; min-height: 44px; border-color: color-mix(in srgb, var(--c-error) 30%, transparent); color: var(--c-error); }
+.btn-delete-session:hover { border-color: var(--c-error); color: var(--c-error); }
+.undo-toast { position: fixed; left: 1rem; right: 1rem; bottom: calc(96px + var(--safe-b)); z-index: 450; max-width: 40rem; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; background: var(--c-surface-high); color: var(--c-on-surface); border: 1px solid color-mix(in srgb, var(--c-outline-v) 35%, transparent); border-radius: var(--r-lg); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); font-size: 0.875rem; }
+.undo-toast span { flex: 1; }
+.undo-toast button { border: 0; min-height: 44px; min-width: 44px; padding: 0 18px; border-radius: var(--r-md); background: transparent; color: var(--c-primary-ctr); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; cursor: pointer; }
 .edit-log-section { margin-top:12px; display:flex; flex-direction:column; gap:10px; }
 .edit-log-group { background:var(--c-surface-ctr); border-radius:var(--r-lg); padding:12px 16px 14px; }
 .edit-log-group-hdr { display:flex; align-items:baseline; gap:8px; margin-bottom:10px; }
@@ -803,6 +810,8 @@ body.session-active .bottomnav { display: none; }
   <button id="navTools" class="nav-btn"><span class="mi">calculate</span><span class="nav-btn-label">Tools</span></button>
   <button id="navNotes" class="nav-btn"><span class="mi">description</span><span class="nav-btn-label">Program</span></button>
 </nav>
+
+<div id="undoLive" role="status" aria-live="polite"></div>
 
 <script>
 (function(){
@@ -2908,7 +2917,11 @@ function renderSessionMode(day) {
 }
 
 // ── RENDER: SUMMARY ────────────────────────────────────────
-function showSummary(record) { renderSummary(record); document.getElementById('summaryPage').classList.add('open'); }
+function showSummary(record) {
+  // Opening another summary makes a pending delete final: the Undo bar would
+  // sit over this page's Delete button, and Undo would leave it stale.
+  finishUndo();
+  renderSummary(record); document.getElementById('summaryPage').classList.add('open'); }
 function closeSummary() { document.getElementById('summaryPage').classList.remove('open'); summaryEditOpen = false; }
 function renderSummary(record) {
   const day = DAYS.find(d => d.id === record.dayType) || { label: record.dayType.toUpperCase(), day: '', accent: '#ece6d8' };
@@ -2940,7 +2953,8 @@ function renderSummary(record) {
     '<button id="editLogToggle" class="edit-log-toggle" onclick="toggleEditLog(\'' + record.id + '\')">' +
     '<span class="mi mi-sm" style="font-variation-settings:FILL 0,wght 400,GRAD 0,opsz 24">edit</span>Edit Log</button>' +
     '<div id="editLogSection" class="edit-log-section" style="display:none">' + renderEditLog(record) + '</div>' +
-    feelHtml;
+    feelHtml +
+    '<button class="btn-ghost btn-delete-session" onclick="deleteSession(\'' + record.id + '\')"><span class="mi mi-sm" aria-hidden="true">delete</span>Delete Session</button>';
   animateScoreRing(sc.total);
 }
 function renderFeelSurvey(record) {
@@ -3106,6 +3120,83 @@ window.updateSessionRpe = function(recordId, key, val) {
   updateSummaryScoreDisplay(rec);
   refreshEditLog(rec);
 };
+// ── SESSION DELETE ─────────────────────────────────────────
+// Everything built from history (last-time weights, suggested loads, trends,
+// the deload nudge, the last-score badge) is worked out from the stored
+// sessions each time it's shown, so removing the record is enough. The one
+// cached value is an open workout's PR mark when it came from history, which
+// is reset below. 1RM baselines are only ever changed by the user, so a delete
+// leaves them alone.
+const UNDO_MS = 10000;
+let undoDelete = null; // { rec, index, timer, el }
+function finishUndo() {
+  if (!undoDelete) return;
+  const u = undoDelete;
+  undoDelete = null; // first, so the button's blur on removal sees no live toast
+  clearTimeout(u.timer);
+  if (u.el && u.el.parentNode) u.el.parentNode.removeChild(u.el);
+}
+function refreshAfterHistoryChange() {
+  // PR marks for lifts with no 1RM are measured against the best in history.
+  if (session) {
+    [session.primaries, session.accessories].forEach(g => Object.keys(g).forEach(k => {
+      const item = sessionItem(k), b = item && liftBaseline(item);
+      if (!(b && b.orm > 0)) delete g[k].prBase;
+    }));
+    saveDraft();
+  }
+  if (document.getElementById('historyPage').classList.contains('open')) {
+    // A deleted session might have been the only one behind the active chip.
+    const ids = getAllSessions().map(s => s.dayType);
+    if (historyFilter !== 'all' && !DAYS.some(d => d.id === historyFilter && !d.isOff) && ids.indexOf(historyFilter) < 0) historyFilter = 'all';
+    buildHistoryChips(); renderHistoryPage();
+  }
+  render();
+}
+window.deleteSession = function(recordId) {
+  // Pressed with Enter/Space rather than tapped (a keyboard click has detail 0).
+  const viaKeys = !!(window.event && window.event.type === 'click' && window.event.detail === 0);
+  const all = getAllSessions(), idx = all.findIndex(s => s.id === recordId);
+  if (idx < 0) return;
+  const rec = all[idx];
+  const day = DAYS.find(d => d.id === rec.dayType);
+  const when = new Date(rec.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (!confirm('Delete the ' + (day ? day.label : rec.dayType.toUpperCase()) + ' session from ' + when + '? Its score and logged sets are removed from History.')) return;
+  all.splice(idx, 1);
+  if (!saveAllSessions(all)) { alert('Could not delete this session — browser storage is unavailable. Nothing was changed.'); return; }
+  if (window._feelDraft && window._feelDraft.recordId === recordId) window._feelDraft = null;
+  if (lastSummary && lastSummary.id === recordId) lastSummary = null;
+  closeSummary();
+  refreshAfterHistoryChange();
+  // Only the latest delete can be undone; an earlier one is final once replaced.
+  finishUndo();
+  // Added inside a live region that is already on the page, so screen readers
+  // announce it; focus moves to Undo because the Delete button just went away.
+  const el = document.createElement('div');
+  el.className = 'undo-toast';
+  el.innerHTML = '<span>Session deleted</span><button type="button" aria-label="Undo delete session">Undo</button>';
+  const btn = el.querySelector('button');
+  btn.addEventListener('click', undoDeleteSession);
+  document.getElementById('undoLive').appendChild(el);
+  // Where it goes back on Undo: its old place, after any trim the save did.
+  undoDelete = { rec: rec, index: Math.max(0, idx - Math.max(0, all.length - SESSION_CAP)), el: el, timer: setTimeout(finishUndo, UNDO_MS) };
+  // The Delete button just went away; a keyboard user lands on Undo.
+  if (viaKeys) { try { btn.focus({ preventScroll: true }); } catch(e) {} }
+};
+function undoDeleteSession() {
+  if (!undoDelete) return;
+  const u = undoDelete, all = getAllSessions();
+  if (!all.some(s => s.id === u.rec.id)) {
+    // Its old position: new sessions only ever go on the end, so this keeps
+    // the order the suggested weights read from.
+    all.splice(Math.min(u.index, all.length), 0, u.rec);
+    if (!saveAllSessions(all)) { alert('Could not restore the session — browser storage is full or unavailable.'); return; }
+    // At the 400-session limit the save keeps the newest; say so if that dropped it.
+    if (!getAllSessions().some(s => s.id === u.rec.id)) alert('Could not restore the session — History is at its 400-session limit and this was the oldest.');
+  }
+  finishUndo();
+  refreshAfterHistoryChange();
+}
 window.openSessionSummary = function(id) {
   const rec = getAllSessions().find(function(s){ return s.id === id; });
   if (!rec) return;
@@ -3874,6 +3965,8 @@ function closeTopLayer() {
   if (open('importPage')) { closeImportPage(); return true; }
   if (open('strengthPage')) { closeStrengthPage(); return true; }
   if (open('progPage')) { closeProgPage(); return true; }
+  // Back with the Undo toast up just dismisses it (the delete stays).
+  if (document.querySelector('.undo-toast')) { finishUndo(); return true; }
   return false;
 }
 window.apparatusBack = closeTopLayer;
@@ -3934,7 +4027,7 @@ if ('serviceWorker' in navigator) {
   let reloading = false, lastCheck = 0, pendingUpdate = false;
   const reloadNow = () => { if (reloading) return; reloading = true; location.reload(); };
   // Don't pull someone out of a session, a page or a half-filled dialog.
-  const isBusy = () => !!(session || timerState === 'running' || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open'));
+  const isBusy = () => !!(session || timerState === 'running' || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open, .undo-toast'));
   const showUpdateBanner = () => {
     pendingUpdate = true;
     if (document.getElementById('updateBanner')) return;
