@@ -547,6 +547,14 @@ body.session-active .bottomnav { display: none; }
 .mb-2 { margin-bottom: 0.5rem; }
 .flex-row-between { display: flex; align-items: center; gap: 12px; }
 
+/* ── CLOSED LAYERS (out of tab order and screen readers) ── */
+.slide-page { visibility: hidden; transition: transform 0.25s ease, visibility 0s linear 0.25s; }
+.slide-page.open { visibility: visible; transition: transform 0.25s ease, visibility 0s; }
+.modal-overlay, .timer-settings-overlay { visibility: hidden; transition: opacity 0.25s ease, visibility 0s linear 0.25s; }
+.modal-overlay.open, .timer-settings-overlay.open { visibility: visible; transition: opacity 0.25s ease, visibility 0s; }
+.timer-panel { visibility: hidden; transition: opacity 0.15s, transform 0.15s, visibility 0s linear 0.15s; }
+.timer-panel.show { visibility: visible; transition: opacity 0.15s, transform 0.15s, visibility 0s; }
+
 /* ── FOCUS & MOTION ───────────────────────────────────────── */
 :focus-visible { outline: 2px solid var(--c-secondary); outline-offset: 2px; }
 .input-field:focus-visible, .calc-input:focus-visible, .log-input:focus-visible { outline: none; }
