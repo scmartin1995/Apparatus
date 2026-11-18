@@ -43,10 +43,12 @@ self.addEventListener('install', event => {
       const cache = await caches.open(CACHE_NAME);
       // Cache individually — don't let one missing icon abort install
       // Fetch past the HTTP cache so a new worker never stores the old shell.
-      await Promise.allSettled(shell.map(async url => {
+      // Each file is bounded (download and cache write together) so a stalled
+      // download (the icon font is ~1 MB) can't hold up an update.
+      await Promise.allSettled(shell.map(url => withTimeout((async () => {
         const res = await fetch(url, { cache: 'no-cache' });
         if (res.ok) await cache.put(url, res);
-      }));
+      })(), 60000)));
       await self.skipWaiting();
     })()
   );

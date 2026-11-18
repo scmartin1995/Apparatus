@@ -3,7 +3,7 @@
 #
 #   tools/build-apk.sh            # writes android/build/apparatus.apk
 #
-# Needs: java/javac, node, curl, aapt, zipalign, apksigner, dalvik-exchange
+# Needs: java/javac, node, aapt, zipalign, apksigner, dalvik-exchange
 # and an android.jar. On Ubuntu:
 #   apt-get install aapt apksigner zipalign dalvik-exchange android-sdk-platform-23
 #
