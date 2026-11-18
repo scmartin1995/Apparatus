@@ -2519,7 +2519,9 @@ function setScoreTicks(total) {
   document.querySelectorAll('.score-tick').forEach(function(t) { t.classList.toggle('lit', +t.dataset.v < total); });
 }
 // Sweeps the ring and counts the number up to the score once the summary opens.
+var scoreAnimId = 0;
 function animateScoreRing(total) {
+  const animId = ++scoreAnimId;
   const fg = document.querySelector('.score-ring-fg'), val = document.querySelector('.score-ring-value');
   if (!fg || !val) return;
   const circ = 2 * Math.PI * 92, end = circ * (1 - total / 100);
@@ -2530,7 +2532,8 @@ function animateScoreRing(total) {
   // Two frames so the empty ring is painted first and the CSS transition runs.
   requestAnimationFrame(function() { requestAnimationFrame(function() { fg.setAttribute('stroke-dashoffset', end.toFixed(2)); }); });
   (function step(now) {
-    const t = Math.min(1, (now - start) / dur), e = 1 - Math.pow(1 - t, 3), cur = Math.round(total * e);
+    if (animId !== scoreAnimId) return;
+    const t = Math.min(1, Math.max(0, (now - start) / dur)), e = 1 - Math.pow(1 - t, 3), cur = Math.round(total * e);
     val.textContent = cur; setScoreTicks(cur);
     if (t < 1) requestAnimationFrame(step);
   })(start);
@@ -2933,6 +2936,7 @@ function refreshEditLog(rec) {
 }
 
 function updateSummaryScoreDisplay(rec) {
+  scoreAnimId++;
   const sc = rec.score;
   const circ = 2 * Math.PI * 92, offset = circ * (1 - sc.total / 100);
   const ringFg = document.querySelector('.score-ring-fg');
