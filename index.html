@@ -548,7 +548,7 @@ body.session-active .bottomnav { display: none; }
 .flex-row-between { display: flex; align-items: center; gap: 12px; }
 
 /* ── UPDATE BANNER ─────────────────────────────────────────── */
-.update-banner { position: fixed; left: 1rem; right: 1rem; top: calc(var(--topbar-h, 57px) + 8px); z-index: 150; max-width: 40rem; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; background: var(--c-surface-high); color: var(--c-on-surface); border: 1px solid color-mix(in srgb, var(--c-outline-v) 35%, transparent); border-radius: var(--r-lg); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); font-size: 0.875rem; }
+.update-banner { position: fixed; left: 1rem; right: 1rem; top: calc(var(--topbar-h, 57px) + 8px); z-index: 450; max-width: 40rem; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; background: var(--c-surface-high); color: var(--c-on-surface); border: 1px solid color-mix(in srgb, var(--c-outline-v) 35%, transparent); border-radius: var(--r-lg); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); font-size: 0.875rem; }
 .update-banner button { border: 0; min-height: 44px; padding: 0 18px; border-radius: var(--r-md); background: var(--c-primary); color: var(--c-on-primary); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; }
 
 /* ── CLOSED LAYERS (out of tab order and screen readers) ── */
@@ -2534,7 +2534,7 @@ function animateScoreRing(total) {
   }
   const start = performance.now(), dur = 1100;
   // Two frames so the empty ring is painted first and the CSS transition runs.
-  requestAnimationFrame(function() { requestAnimationFrame(function() { fg.setAttribute('stroke-dashoffset', end.toFixed(2)); }); });
+  requestAnimationFrame(function() { requestAnimationFrame(function() { if (animId === scoreAnimId) fg.setAttribute('stroke-dashoffset', end.toFixed(2)); }); });
   (function step(now) {
     if (animId !== scoreAnimId) return;
     const t = Math.min(1, Math.max(0, (now - start) / dur)), e = 1 - Math.pow(1 - t, 3), cur = Math.round(total * e);
@@ -2583,7 +2583,7 @@ function cleanGroup(g, kind) {
     if (!/^\d+-\d+$/.test(k) || !it || typeof it !== 'object') return;
     const t = it.target || {};
     const c = { name: String(it.name == null ? '' : it.name), note: String(it.note == null ? '' : it.note), setsStr: String(it.setsStr == null ? '' : it.setsStr),
-      target: { numSets: Number(t.numSets) || 1, repLow: Number(t.repLow) || 1, repHigh: Number(t.repHigh) || Number(t.repLow) || 1 } };
+      target: (function() { const pos = v => Math.min(Math.max(parseInt(v) || 1, 1), 100), lo = pos(t.repLow); return { numSets: Math.min(pos(t.numSets), 20), repLow: lo, repHigh: Math.max(pos(t.repHigh || t.repLow), lo) }; })() };
     if (typeof it.prBase === 'number' && isFinite(it.prBase)) c.prBase = it.prBase;
     if (kind === 'ar7') { c.weight = numStr(it.weight); c.rounds = Math.min(Math.max(parseInt(it.rounds) || 0, 0), 7); }
     else { c.bw = !!it.bw; c.sets = cleanSets(it.sets); if (kind === 'acc') c.rpe = Math.min(Math.max(parseInt(it.rpe) || 0, 0), 5); }
@@ -2598,7 +2598,7 @@ function cleanFeel(f) {
 }
 function cleanSession(s, isDraft) {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
-  const dayType = safeId(s.dayType, '');
+  const dayType = safeId(s.dayType, isDraft ? '' : 'unknown');
   if (!dayType) return null;
   const out = { dayType: dayType, primaries: cleanGroup(s.primaries, 'primary'), ar7: cleanGroup(s.ar7, 'ar7'), accessories: cleanGroup(s.accessories, 'acc'), feel: cleanFeel(s.feel) };
   if (isDraft) {
@@ -2606,8 +2606,8 @@ function cleanSession(s, isDraft) {
     out.startTime = Number(s.startTime) || Date.now();
     return out;
   }
-  out.id = safeId(s.id, '');
-  if (!out.id || isNaN(new Date(s.date).getTime())) return null;
+  if (s.date == null || isNaN(new Date(s.date).getTime())) return null;
+  out.id = safeId(s.id, '') || ('sess-' + new Date(s.date).getTime());
   out.date = new Date(s.date).toISOString();
   out.durationSec = Math.max(0, parseInt(s.durationSec) || 0);
   const sc = s.score && typeof s.score === 'object' ? s.score : {};
@@ -2788,7 +2788,7 @@ function renderSessionMode(day) {
             '</div>';
         });
         let rpeDots = '';
-        for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" onclick="setAccessoryRpe(\'' + key + '\',' + r + ')">' + r + '</button>';
+        for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" aria-label="RPE ' + r + '" aria-pressed="' + (acc.rpe===r) + '" onclick="setAccessoryRpe(\'' + key + '\',' + r + ')">' + r + '</button>';
         const rpeHtml = '<div class="log-rpe"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div>';
         itemsHtml += '<div class="log-item">' + header + noteHtml + accHintHtml + '<div class="log-sets">' + setsHtml + '</div><div id="pr-' + key + '">' + prBoxHtml(key, pr) + '</div>' + rpeHtml + '</div>';
       }
@@ -2850,7 +2850,7 @@ function renderFeelSurvey(record) {
   ];
   return '<div class="feel-survey"><div class="feel-survey-title">Session Feel</div><div class="feel-survey-sub">Rate today\'s session to finalize your score.</div>' +
     questions.map(q => '<div class="feel-question"><div class="feel-q-label">' + q.label + '</div><div class="feel-scale">' +
-      [1,2,3,4,5].map(v => '<button class="feel-dot ' + (f[q.key]===v?'selected':'') + '" onclick="updateFeel(\'' + record.id + '\',\'' + q.key + '\',' + v + ')">' + v + '</button>').join('') +
+      [1,2,3,4,5].map(v => '<button class="feel-dot ' + (f[q.key]===v?'selected':'') + '" aria-label="' + q.label + ' ' + v + '" aria-pressed="' + (f[q.key]===v) + '" onclick="updateFeel(\'' + record.id + '\',\'' + q.key + '\',' + v + ')">' + v + '</button>').join('') +
     '</div></div>').join('') +
     '<button class="btn-save" style="margin-top:1rem" onclick="saveFeelDraft(\'' + record.id + '\')">Save Feel</button></div>';
 }
@@ -2928,7 +2928,7 @@ function renderEditLog(record) {
         '</div>';
     }).join('');
     let rpeDots = '';
-    for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" onclick="updateSessionRpe(\'' + record.id + '\',\'' + key + '\',' + r + ')">' + r + '</button>';
+    for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" aria-label="RPE ' + r + '" aria-pressed="' + (acc.rpe===r) + '" onclick="updateSessionRpe(\'' + record.id + '\',\'' + key + '\',' + r + ')">' + r + '</button>';
     groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Accessory</span><span class="edit-log-group-name">' + esc(acc.name) + '</span></div><div class="log-sets">' + setsHtml + '</div><div class="log-rpe" style="margin-top:10px"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div></div>';
   });
   return groups || '<p style="font-size:0.75rem;color:var(--c-on-surface-v);padding:8px 0">No logged data to edit.</p>';
@@ -3786,7 +3786,7 @@ render = function() { _origRender(); requestAnimationFrame(syncLayoutVars); };
 // When a new version takes over: reload straight away if no session is
 // running, otherwise offer a Reload button so a set in progress isn't lost.
 if ('serviceWorker' in navigator) {
-  const hadController = !!navigator.serviceWorker.controller;
+  let hadController = !!navigator.serviceWorker.controller;
   let reloading = false, lastCheck = 0;
   const reloadNow = () => { if (reloading) return; reloading = true; location.reload(); };
   const showUpdateBanner = () => {
@@ -3799,14 +3799,17 @@ if ('serviceWorker' in navigator) {
     bar.appendChild(msg); bar.appendChild(btn); document.body.appendChild(bar);
   };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController) return; // first install, nothing to refresh
-    if (!session) reloadNow(); else showUpdateBanner();
+    // First install: nothing to refresh, but later updates in this page should count.
+    if (!hadController) { hadController = true; return; }
+    // Don't pull someone out of a session, a page or a half-filled dialog.
+    const busy = session || document.querySelector('.slide-page.open, .modal-overlay.open, .timer-settings-overlay.open');
+    if (busy) showUpdateBanner(); else reloadNow();
   });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
       const check = () => {
         if (Date.now() - lastCheck < 30 * 60 * 1000) return;
-        lastCheck = Date.now(); reg.update().catch(() => {});
+        lastCheck = Date.now(); reg.update().catch(() => { lastCheck = 0; }); // offline: try again next time
       };
       check();
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
