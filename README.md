@@ -64,7 +64,7 @@ the app writes the same file. Columns:
 
 | column | meaning |
 | --- | --- |
-| `day` | Day name. Blank rows inherit the day above. |
+| `day` | Day name. Blank rows inherit the day above. Put weekdays in it ("Thursday", "Sun–Wed Off", "Mon/Wed/Fri") and the app opens on today's day. |
 | `day_focus` | Subtitle, e.g. `Chest · Shoulders · Triceps` |
 | `day_notes` | Session notes banner |
 | `section` | Section heading. Repeat to add items to it. |
@@ -79,8 +79,10 @@ load and reps, `ar7` on rounds completed, everything else on sets and RPE.
 Programmed work that isn't logged scores zero, so skipping sets or exercises
 lowers the score.
 
-A CSV can't express day colors, durations, weekday scheduling, or 1RM values —
-the app fills those in. Use JSON if you need them preserved.
+A CSV can't express day colors, durations, or 1RM values — the app fills those
+in. Weekday scheduling comes from weekday names in the `day` column; weekdays no
+day names go to the one rest day, if there is exactly one. Use JSON if you need
+these preserved exactly.
 
 ### JSON export
 

@@ -2096,7 +2096,7 @@ function sanitizeProgram(p) {
     return b;
   });
   p.weekdayMap = (Array.isArray(p.weekdayMap) && p.weekdayMap.length === 7)
-    ? p.weekdayMap.map(id => dayIds[str(id)] || safeId(id, '')) : null;
+    ? p.weekdayMap.map(id => dayIds[str(id)] || safeId(id, '')) : inferWeekdayMap(p.days);
   return p;
 }
 function currentProgramId() { return (PROGRAM && PROGRAM.id) || 'none'; }
@@ -2174,6 +2174,37 @@ function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,32);
 }
 
+// Ties days to weekdays from their names, so a program opens on today's day.
+// Reads weekday names and ranges in a day's name ("Thursday", "Sun–Wed",
+// "Mon/Wed/Fri"). Weekdays no day names go to the one rest day, if there is
+// exactly one. Returns null when no day names a weekday.
+const WEEKDAY_RE = /\b(sun|mon|tue|wed|thu|fri|sat)(?:day|nesday|sday|rsday|urday|rs|r|s)?s?\b/gi;
+const WEEKDAY_IDX = { sun:0, mon:1, tue:2, wed:3, thu:4, fri:5, sat:6 };
+function weekdaysIn(text) {
+  const found = [], hits = [];
+  let m;
+  WEEKDAY_RE.lastIndex = 0;
+  while ((m = WEEKDAY_RE.exec(text))) hits.push({ i: WEEKDAY_IDX[m[1].toLowerCase()], start: m.index, end: m.index + m[0].length });
+  for (let h = 0; h < hits.length; h++) {
+    const between = h > 0 ? text.slice(hits[h-1].end, hits[h].start) : '';
+    if (h > 0 && /^\s*(?:[-–—~]|to|thru|through)\s*$/i.test(between)) {
+      for (let d = (hits[h-1].i + 1) % 7, n = 0; n < 7; d = (d + 1) % 7, n++) { if (found.indexOf(d) < 0) found.push(d); if (d === hits[h].i) break; }
+    } else if (found.indexOf(hits[h].i) < 0) found.push(hits[h].i);
+  }
+  return found;
+}
+function inferWeekdayMap(days) {
+  const map = [null, null, null, null, null, null, null];
+  let any = false;
+  (days || []).forEach(d => {
+    weekdaysIn((d.day || '') + ' ' + (d.label || '')).forEach(w => { if (map[w] === null) { map[w] = d.id; any = true; } });
+  });
+  if (!any) return null;
+  const rest = (days || []).filter(d => (d.isOff || /\b(off|rest|recovery)\b/i.test((d.label || '') + ' ' + (d.day || ''))) && map.indexOf(d.id) < 0);
+  if (rest.length === 1) for (let w = 0; w < 7; w++) if (map[w] === null) map[w] = rest[0].id;
+  return map;
+}
+
 function buildProgramFromCSV(rows, programName) {
   // 'day' column = display name; ID auto-derived via slugify
   // Carry-forward: blank day cells inherit from the row above
@@ -2244,7 +2275,7 @@ function buildProgramFromCSV(rows, programName) {
     importedAt: new Date().toISOString(),
     days: dayOrder.map(id => dayMap[id]),
     baselines: Object.values(baselineMap),
-    weekdayMap: null,
+    weekdayMap: inferWeekdayMap(dayOrder.map(id => dayMap[id])),
   };
 }
 // ── CSV TEMPLATE ───────────────────────────────────────────
