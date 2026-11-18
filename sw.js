@@ -27,6 +27,9 @@ const FONT_FILES = [
   'fonts/material-symbols-outlined.woff2',
 ];
 
+// Files this version can't run without (see install).
+const REQUIRED = ['', 'index.html', 'fonts/fonts.css', 'fonts/material-symbols-outlined.woff2'];
+
 // ── INSTALL ────────────────────────────────────────────────
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -41,13 +44,14 @@ self.addEventListener('install', event => {
         ...FONT_FILES.map(f => base + f),
       ];
       const cache = await caches.open(CACHE_NAME);
+      const fresh = new Set();
       // Cache individually — don't let one missing icon abort install
       // Fetch past the HTTP cache so a new worker never stores the old shell.
       // Each file is bounded (download and cache write together) so a stalled
       // download (the icon font is ~1 MB) can't hold up an update.
       await Promise.allSettled(shell.map(url => withTimeout((async () => {
         const res = await fetch(url, { cache: 'no-cache' });
-        if (res.ok) await cache.put(url, res);
+        if (res.ok) { await cache.put(url, res); fresh.add(url); }
       })(), 60000)));
       // A file that failed to download keeps the previous version's copy,
       // so the app still opens offline after an update on a bad connection.
@@ -61,6 +65,13 @@ self.addEventListener('install', event => {
           }
         }
       } catch (e) {}
+      // These must be this version's own copies: an older index.html (or font
+      // stylesheet) paired with this version's fonts would leave the icons
+      // broken offline. If one couldn't be downloaded, fail the install so the
+      // current version stays in charge; the next update check tries again.
+      for (const url of REQUIRED.map(f => base + f)) {
+        if (!fresh.has(url)) throw new Error('update incomplete: ' + url);
+      }
       await self.skipWaiting();
     })()
   );
