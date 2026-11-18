@@ -75,7 +75,7 @@ self.addEventListener('install', event => {
           if (await cache.match(url)) continue;
           for (const key of olds) {
             const prev = await (await caches.open(key)).match(url);
-            if (prev) { await cache.put(url, prev); break; }
+            if (prev && prev.ok) { await cache.put(url, prev); break; }
           }
         }
       } catch (e) {}
@@ -136,10 +136,15 @@ self.addEventListener('fetch', event => {
         await caches.match(base);
       // no-cache: revalidate with the server so GitHub Pages' 10-minute
       // HTTP cache can't hand back yesterday's index.html.
+      let saved = Promise.resolve();
       const network = fetch(request, { cache: 'no-cache' }).then(res => {
-        if (res.ok) put(request, res.clone());
+        if (res.ok) saved = put(request, res.clone());
         return res;
       });
+      // Keep the worker alive until the fresh copy is saved, even when the
+      // cached copy was already served after the 4-second fallback.
+      // (Registered here, before the first await, while the event is active.)
+      event.waitUntil(network.then(() => saved, () => {}));
       const fallback = await cached();
       try {
         const res = await (fallback ? withTimeout(network, 4000) : network);
