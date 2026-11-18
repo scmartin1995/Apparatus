@@ -48,6 +48,19 @@ self.addEventListener('install', event => {
         base + 'icon-512.png',
       ];
       const cache = await caches.open(CACHE_NAME);
+      // Carry the fonts over from the previous version first, so a slow
+      // download below can't leave the icons missing offline after an update.
+      try {
+        for (const key of await caches.keys()) {
+          if (key === CACHE_NAME) continue;
+          const old = await caches.open(key);
+          for (const req of await old.keys()) {
+            if (!FONT_HOSTS.includes(new URL(req.url).hostname)) continue;
+            const res = await old.match(req);
+            if (res) await cache.put(req, res);
+          }
+        }
+      } catch (e) {}
       // Cache individually — don't let one missing icon abort install
       // Fetch past the HTTP cache so a new worker never stores the old shell.
       await Promise.allSettled(shell.map(async url => {

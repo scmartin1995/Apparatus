@@ -549,6 +549,8 @@ body.session-active .bottomnav { display: none; }
 
 /* ── UPDATE BANNER ─────────────────────────────────────────── */
 .update-banner { position: fixed; left: 1rem; right: 1rem; top: calc(var(--topbar-h, 57px) + 8px); z-index: 450; max-width: 40rem; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; background: var(--c-surface-high); color: var(--c-on-surface); border: 1px solid color-mix(in srgb, var(--c-outline-v) 35%, transparent); border-radius: var(--r-lg); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); font-size: 0.875rem; }
+.update-banner span { flex: 1; }
+.update-banner .update-later { background: transparent; color: var(--c-on-surface-v); }
 .update-banner button { border: 0; min-height: 44px; padding: 0 18px; border-radius: var(--r-md); background: var(--c-primary); color: var(--c-on-primary); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; }
 
 /* ── CLOSED LAYERS (out of tab order and screen readers) ── */
@@ -2606,9 +2608,11 @@ function cleanSession(s, isDraft) {
     out.startTime = Number(s.startTime) || Date.now();
     return out;
   }
-  if (s.date == null || isNaN(new Date(s.date).getTime())) return null;
-  out.id = safeId(s.id, '') || ('sess-' + new Date(s.date).getTime());
-  out.date = new Date(s.date).toISOString();
+  // A damaged date keeps the record (dated 1970) rather than dropping it: a
+  // dropped record would be erased by the next save.
+  const when = s.date == null || isNaN(new Date(s.date).getTime()) ? new Date(0) : new Date(s.date);
+  out.id = safeId(s.id, '') || ('sess-' + when.getTime());
+  out.date = when.toISOString();
   out.durationSec = Math.max(0, parseInt(s.durationSec) || 0);
   const sc = s.score && typeof s.score === 'object' ? s.score : {};
   const keys = ['total','primary','primaryMax','hyper','hyperMax','feel','feelMax','primaryPct','hyperPct','feelPct'];
@@ -3803,7 +3807,9 @@ if ('serviceWorker' in navigator) {
     const msg = document.createElement('span'); msg.textContent = 'A new version is ready.';
     const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = 'Reload';
     btn.addEventListener('click', () => { saveDraft(); reloadNow(); });
-    bar.appendChild(msg); bar.appendChild(btn); document.body.appendChild(bar);
+    const later = document.createElement('button'); later.type = 'button'; later.className = 'update-later';
+    later.textContent = 'Later'; later.addEventListener('click', () => bar.remove());
+    bar.appendChild(msg); bar.appendChild(later); bar.appendChild(btn); document.body.appendChild(bar);
   };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     // First install: nothing to refresh, but later updates in this page should count.
