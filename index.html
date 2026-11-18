@@ -3640,12 +3640,14 @@ function render() {
 
   if (!PROGRAM) { renderNoProgramState(); return; }
 
-  document.getElementById('tabs').innerHTML = DAYS.map(d => {
+  const tabsEl = document.getElementById('tabs');
+  tabsEl.innerHTML = weekOrderedDays().map(d => {
     const active = activeDay === d.id, locked = session && session.dayType !== d.id;
     const op = locked ? 'opacity:0.35;' : '';
     return '<button class="tab-btn' + (active?' active':'') + '" data-day-id="' + d.id + '" style="' + op + (active?'color:'+ac(d.accent)+';border-bottom-color:'+ac(d.accent):'') + '"><span class="tab-day">' + esc(d.day) + '</span>' + esc(d.label) + '</button>';
   }).join('');
   document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchDay(b.dataset.dayId)));
+  revealActiveTab(tabsEl);
 
   const day = DAYS.find(d => d.id === activeDay);
   if (!day) return;
@@ -3689,6 +3691,24 @@ function render() {
     '<div class="session-meta"><span class="session-sub">' + esc(day.sub) + '</span><span class="session-duration">\xB7 ' + esc(day.duration) + '</span></div>' +
     badgeHtml + nudgeHtml + startBtnHtml + notesHtml +
     '<div class="sections-list">' + sectionsHtml + '</div>';
+}
+
+// Tabs follow the week, Monday first, by the earliest weekday each day covers,
+// so a Mon–Wed or Sun–Wed off-days tab sits leftmost. Days with no weekday keep
+// their file order after those. Programs with no weekday map keep file order.
+function weekOrderedDays() {
+  const map = PROGRAM && PROGRAM.weekdayMap;
+  if (!map) return DAYS.slice();
+  const key = d => { let k = 7; map.forEach((id, w) => { if (id === d.id) k = Math.min(k, (w + 6) % 7); }); return k; };
+  return DAYS.map((d, i) => ({ d, i, k: key(d) })).sort((a, b) => a.k - b.k || a.i - b.i).map(x => x.d);
+}
+// Scrolls the tab strip sideways only, just enough to show the active tab.
+function revealActiveTab(strip) {
+  const tab = strip && strip.querySelector('.tab-btn.active');
+  if (!tab) return;
+  const s = strip.getBoundingClientRect(), t = tab.getBoundingClientRect();
+  if (t.left < s.left) strip.scrollLeft += t.left - s.left;
+  else if (t.right > s.right) strip.scrollLeft += t.right - s.right;
 }
 
 function renderOffDays(day) {
@@ -4045,6 +4065,8 @@ restoreTimerState();
 updateTimerDisplay();
 renderBaselines();
 render();
+// Tab widths change once web fonts load, so check the active tab is still in view.
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => revealActiveTab(document.getElementById('tabs'))).catch(() => {});
 setActiveNav();
 syncLayoutVars();
 
