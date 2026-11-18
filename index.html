@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<!-- Content Security Policy: the app only talks to its own origin and Google Fonts.
+<!-- Content Security Policy: the app only talks to its own origin. Fonts ship in fonts/,
+     so no visitor's IP address is sent to Google or anyone else.
      Inline scripts stay allowed because the UI uses onclick attributes; what this
      blocks is loading outside scripts and sending data anywhere. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"/>
 <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
 <title>Apparatus</title>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -26,8 +27,7 @@
 })();
 </script>
 <link rel="manifest" href="manifest.json"/>
-<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="fonts/fonts.css" rel="stylesheet"/>
 <style>
 /* ── TOKENS ───────────────────────────────────────────────── */
 /* Chalk & Redline. Dark is the default; light follows the phone unless the

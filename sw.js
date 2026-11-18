@@ -1,6 +1,6 @@
 // ── APPARATUS SERVICE WORKER ───────────────────────────────
 // No manual path config needed. Paths auto-derived from SW scope.
-const CACHE_NAME = 'apparatus-v18';
+const CACHE_NAME = 'apparatus-v19';
 
 // Gives up on a network request after ms, so a dead or crawling connection
 // can't stall the app (or a service worker update) indefinitely.
@@ -15,25 +15,17 @@ function put(request, response) {
   return caches.open(CACHE_NAME).then(cache => cache.put(request, response)).catch(() => {});
 }
 
-// The icon and text fonts come from Google. Without them cached, every icon
-// renders as its text name offline.
-const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
-
-// Reads the stylesheet links out of index.html (so they are listed in one
-// place) and caches each stylesheet plus the font files it points to.
-async function cacheFonts(cache, base) {
-  const html = await (await fetch(base + 'index.html', { cache: 'no-cache' })).text();
-  const sheets = (html.match(/https:\/\/fonts\.googleapis\.com\/[^"']+/g) || [])
-    .map(u => u.replace(/&amp;/g, '&'));
-  await Promise.allSettled(sheets.map(async sheet => {
-    const res = await fetch(sheet);
-    if (!res.ok) return;
-    const css = await res.clone().text();
-    await cache.put(sheet, res);
-    const files = [...new Set(css.match(/https:\/\/fonts\.gstatic\.com\/[^)'"\s]+/g) || [])];
-    await Promise.allSettled(files.map(u => cache.add(u)));
-  }));
-}
+// Fonts ship with the app (fonts/), so they're cached with the shell and
+// nothing is ever requested from Google.
+const FONT_FILES = [
+  'fonts/fonts.css',
+  'fonts/inter-latin.woff2', 'fonts/inter-latin-ext.woff2',
+  'fonts/inter-cyrillic.woff2', 'fonts/inter-cyrillic-ext.woff2',
+  'fonts/inter-greek.woff2', 'fonts/inter-greek-ext.woff2',
+  'fonts/inter-vietnamese.woff2',
+  'fonts/lexend-latin.woff2', 'fonts/lexend-latin-ext.woff2', 'fonts/lexend-vietnamese.woff2',
+  'fonts/material-symbols-outlined.woff2',
+];
 
 // ── INSTALL ────────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -46,6 +38,7 @@ self.addEventListener('install', event => {
         base + 'manifest.json',
         base + 'icon-192.png',
         base + 'icon-512.png',
+        ...FONT_FILES.map(f => base + f),
       ];
       const cache = await caches.open(CACHE_NAME);
       // Cache individually — don't let one missing icon abort install
@@ -54,9 +47,6 @@ self.addEventListener('install', event => {
         const res = await fetch(url, { cache: 'no-cache' });
         if (res.ok) await cache.put(url, res);
       }));
-      // Bounded: if Google Fonts hangs, install still finishes, so the new
-      // version activates instead of leaving people stuck on the old one.
-      try { await withTimeout(cacheFonts(cache, base), 10000); } catch (e) {}
       await self.skipWaiting();
     })()
   );
@@ -79,20 +69,6 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
 
   if (request.method !== 'GET') return;
-
-  // Fonts — cache-first, and keep whatever the page ends up fetching
-  if (FONT_HOSTS.includes(url.hostname)) {
-    event.respondWith(
-      caches.match(request, { ignoreVary: true }).then(cached => {
-        if (cached) return cached;
-        return fetch(request).then(res => {
-          if (res.ok || res.type === 'opaque') put(request, res.clone());
-          return res;
-        });
-      })
-    );
-    return;
-  }
 
   // Skip any other cross-origin request
   if (url.origin !== self.location.origin) return;
