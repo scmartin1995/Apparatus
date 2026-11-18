@@ -6,6 +6,14 @@
      Inline scripts stay allowed because the UI uses onclick attributes; what this
      blocks is loading outside scripts and sending data anywhere. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"/>
+<script>
+(function(){var log=[];function show(m){log.push(m);var d=document.getElementById('dbgOut');if(!d){d=document.createElement('pre');d.id='dbgOut';d.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#ff0;color:#000;font:11px monospace;white-space:pre-wrap;max-height:40vh;overflow:auto;margin:0;padding:4px';(document.body||document.documentElement).appendChild(d);}d.textContent=log.join('\n');}
+document.addEventListener('securitypolicyviolation',function(e){show('CSP '+e.violatedDirective+' blocked '+e.blockedURI+' @'+e.sourceFile+':'+e.lineNumber+' '+(e.sample||''));});
+window.addEventListener('error',function(e){show('ERR '+(e.message||'')+' '+(e.filename||'')+':'+(e.lineno||''));},true);
+window.addEventListener('unhandledrejection',function(e){show('REJ '+(e.reason&&e.reason.message||e.reason));});
+window.addEventListener('load',function(){setTimeout(function(){show('loaded ok; sw='+(!!navigator.serviceWorker&&!!navigator.serviceWorker.controller));},3000);});
+})();
+</script>
 <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
 <title>Apparatus</title>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
