@@ -1,6 +1,19 @@
 // ── APPARATUS SERVICE WORKER ───────────────────────────────
 // No manual path config needed. Paths auto-derived from SW scope.
-const CACHE_NAME = 'apparatus-v16';
+const CACHE_NAME = 'apparatus-v17';
+
+// Gives up on a network request after ms, so a dead or crawling connection
+// can't stall the app (or a service worker update) indefinitely.
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), ms);
+    promise.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
+}
+// Cache writes are best-effort; a full disk must not surface as an error.
+function put(request, response) {
+  return caches.open(CACHE_NAME).then(cache => cache.put(request, response)).catch(() => {});
+}
 
 // The icon and text fonts come from Google. Without them cached, every icon
 // renders as its text name offline.
@@ -37,7 +50,9 @@ self.addEventListener('install', event => {
       const cache = await caches.open(CACHE_NAME);
       // Cache individually — don't let one missing icon abort install
       await Promise.allSettled(shell.map(url => cache.add(url)));
-      try { await cacheFonts(cache, base); } catch (e) {}
+      // Bounded: if Google Fonts hangs, install still finishes, so the new
+      // version activates instead of leaving people stuck on the old one.
+      try { await withTimeout(cacheFonts(cache, base), 10000); } catch (e) {}
       await self.skipWaiting();
     })()
   );
@@ -67,10 +82,7 @@ self.addEventListener('fetch', event => {
       caches.match(request, { ignoreVary: true }).then(cached => {
         if (cached) return cached;
         return fetch(request).then(res => {
-          if (res.ok || res.type === 'opaque') {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
-          }
+          if (res.ok || res.type === 'opaque') put(request, res.clone());
           return res;
         });
       })
@@ -82,25 +94,30 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
 
   // Navigation requests (home screen launch, page reload)
-  // Critical fix: always try network first, fall back to cached index.html
+  // Network first so a new version shows up on the next launch, but only
+  // good responses are cached, and with a cached copy on hand a slow
+  // connection (gym Wi-Fi, one bar) falls back to it after 4 seconds
+  // instead of leaving a blank screen.
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then(res => {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
-          return res;
-        })
-        .catch(async () => {
-          const base = new URL('./', self.location).pathname;
-          return (
-            await caches.match(request) ||
-            await caches.match(base + 'index.html') ||
-            await caches.match(base) ||
-            Response.error()
-          );
-        })
-    );
+    event.respondWith((async () => {
+      const base = new URL('./', self.location).pathname;
+      const cached = async () =>
+        await caches.match(request, { ignoreSearch: true }) ||
+        await caches.match(base + 'index.html') ||
+        await caches.match(base);
+      const network = fetch(request).then(res => {
+        if (res.ok) put(request, res.clone());
+        return res;
+      });
+      const fallback = await cached();
+      try {
+        const res = await (fallback ? withTimeout(network, 4000) : network);
+        return (res.ok || !fallback) ? res : fallback;
+      } catch (e) {
+        network.catch(() => {});
+        return fallback || Response.error();
+      }
+    })());
     return;
   }
 
@@ -109,10 +126,7 @@ self.addEventListener('fetch', event => {
     caches.match(request).then(cached => {
       if (cached) return cached;
       return fetch(request).then(res => {
-        if (res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
-        }
+        if (res.ok) put(request, res.clone());
         return res;
       });
     })
