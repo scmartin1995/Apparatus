@@ -10,7 +10,14 @@ function checkFonts(root) {
   const css = fs.readFileSync(path.join(root, 'fonts', 'fonts.css'), 'utf8');
   // url(x), url('x') or url("x"); a ?query or #fragment is not part of the file name.
   const used = new Set(['fonts/fonts.css',
-    ...[...css.matchAll(/url\(\s*['"]?([^)'"]+?)['"]?\s*\)/g)].map(m => 'fonts/' + m[1].split(/[?#]/)[0])]);
+    ...[...css.matchAll(/url\(\s*['"]?([^)'"]+?)['"]?\s*\)/g)].map(m => {
+      const ref = m[1].split(/[?#]/)[0];
+      // Only relative paths inside fonts/ are served by the app itself.
+      if (/^([a-z][a-z0-9+.-]*:|\/)/i.test(ref)) throw new Error('fonts.css must use relative font paths: ' + ref);
+      const f = path.posix.normalize(path.posix.join('fonts', ref));
+      if (!f.startsWith('fonts/')) throw new Error('fonts.css points outside fonts/: ' + ref);
+      return f;
+    })]);
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const block = (sw.match(/const FONT_FILES = \[([\s\S]*?)\];/) || [])[1];
   if (!block) throw new Error('FONT_FILES not found in sw.js');

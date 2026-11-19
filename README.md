@@ -102,7 +102,7 @@ apple-touch-icon.png            iPhone home-screen icon
 fonts/                          self-hosted fonts + licences. Each .woff2 name ends in the first 8 hex
                                 digits of its SHA-256; a changed font gets a new name. FONT_FILES in
                                 sw.js must match fonts.css; run tools/check-fonts.js. Bump CACHE_NAME
-                                when a font changes
+                                for any change in fonts/, fonts.css included
 programs/*.json                 program definitions
 programs/index.json             ordered list of what ships; first is the default
 tools/embed-program.js          validates them and inlines them into index.html

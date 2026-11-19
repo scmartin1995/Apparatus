@@ -50,7 +50,7 @@ const STAGING = CACHE_NAME + '-staging';
 
 // A font file that is safe to reuse from another cache: hashed, so the name
 // fixes the contents. fonts.css is not hashed and is always downloaded fresh.
-const isHashedFont = path => /\/fonts\/[^/]+\.[0-9a-f]{8}\.woff2$/.test(path);
+const isHashedFont = path => /\/fonts\/(?:[^/]+\/)*[^/]+\.[0-9a-f]{8}\.woff2$/.test(path);
 
 // ── INSTALL ────────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -76,15 +76,18 @@ self.addEventListener('install', event => {
         if (isHashedFont(pathOf(req)) && shell.includes(pathOf(req))) ready.add(pathOf(req));
         else await staging.delete(req);
       }
-      // Reuse hashed font files any earlier version already has.
+      // Reuse hashed font files any earlier version already has. Best effort:
+      // anything not reused is downloaded below.
       const olds = (await caches.keys()).filter(k => k !== CACHE_NAME && k !== STAGING && k.startsWith('apparatus-'));
-      for (const url of shell) {
-        if (!isHashedFont(url) || ready.has(url)) continue;
-        for (const key of olds) {
-          const prev = await (await caches.open(key)).match(url);
-          if (prev && prev.ok) { await staging.put(url, prev); ready.add(url); break; }
+      try {
+        for (const url of shell) {
+          if (!isHashedFont(url) || ready.has(url)) continue;
+          for (const key of olds) {
+            const prev = await (await caches.open(key)).match(url);
+            if (prev && prev.ok) { await staging.put(url, prev); ready.add(url); break; }
+          }
         }
-      }
+      } catch (e) {}
       // Download the rest. Fetch past the HTTP cache so a new worker never
       // stores the old shell. Each download is bounded, and a timed-out one is
       // aborted so it can't finish later. One failure doesn't stop the others.
@@ -99,7 +102,8 @@ self.addEventListener('install', event => {
         }
       }));
       // On a first install there is no earlier version to fall back to, so
-      // keep whatever arrived; the fetch handler fills gaps when online.
+      // keep whatever arrived, even if storage fills up partway; the fetch
+      // handler fills gaps when online.
       const updating = !!self.registration.active;
       let created = false;
       try {
@@ -130,6 +134,12 @@ self.addEventListener('install', event => {
         const cache = await caches.open(CACHE_NAME);
         for (const req of await staging.keys()) await cache.put(req, await staging.match(req));
       } catch (e) {
+        if (!updating) {
+          // First install: keep what was copied and finish installing.
+          await caches.delete(STAGING).catch(() => {});
+          await self.skipWaiting();
+          return;
+        }
         // A copy cut short (storage full) must not leave a half-filled cache.
         if (created) await caches.delete(CACHE_NAME).catch(() => {});
         // Keep only the finished hashed font files for the next attempt.
