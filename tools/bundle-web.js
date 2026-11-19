@@ -22,6 +22,8 @@ fs.mkdirSync(path.join(assets, 'fonts'), { recursive: true });
 const licences = fs.readdirSync(path.join(root, 'fonts')).filter(f => f.endsWith('.txt')).map(f => 'fonts/' + f);
 let files = 0;
 for (const f of [...used, ...licences]) {
+  // fonts.css may point into a subfolder of fonts/.
+  fs.mkdirSync(path.dirname(path.join(assets, f)), { recursive: true });
   fs.copyFileSync(path.join(root, f), path.join(assets, f));
   files++;
 }

@@ -4,6 +4,7 @@
 // tools/bundle-web.js runs it too, so the APK build fails on a mismatch.
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 function checkFonts(root) {
   const css = fs.readFileSync(path.join(root, 'fonts', 'fonts.css'), 'utf8');
@@ -25,8 +26,20 @@ function checkFonts(root) {
   if (!req) throw new Error('REQUIRED not found in sw.js');
   const badReq = [...req.matchAll(/'([^']+)'/g)].map(m => m[1]).filter(f => f.startsWith('fonts/') && !listed.has(f));
   if (badReq.length) throw new Error('sw.js REQUIRED names fonts not in FONT_FILES: ' + badReq.join(', '));
+  // The install needs the icon font, found by its name in FONT_FILES.
+  if (![...listed].some(f => f.startsWith('fonts/material-symbols-outlined.'))) {
+    throw new Error('sw.js FONT_FILES has no fonts/material-symbols-outlined.* file');
+  }
   for (const f of used) {
     if (!fs.statSync(path.join(root, f), { throwIfNoEntry: false })?.isFile()) throw new Error('missing font file: ' + f);
+    // Font file names carry the first 8 hex digits of their SHA-256, so the
+    // service worker can reuse a file by name across versions. A changed font
+    // must get a new name.
+    if (f.endsWith('.woff2')) {
+      const m = f.match(/\.([0-9a-f]{8})\.woff2$/);
+      const hash = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, f))).digest('hex').slice(0, 8);
+      if (!m || m[1] !== hash) throw new Error('font file name must end .' + hash + '.woff2: ' + f);
+    }
   }
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   if (/fonts\.g(oogleapis|static)\.com/.test(html)) throw new Error('index.html still loads fonts from Google');

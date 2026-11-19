@@ -15,34 +15,42 @@ function put(request, response) {
   return caches.open(CACHE_NAME).then(cache => cache.put(request, response)).catch(() => {});
 }
 
-// Fonts ship with the app (fonts/), so they're cached with the shell and
-// nothing is ever requested from Google.
+// Fonts ship with the app (fonts/), so nothing is ever requested from Google.
+// Each font file name carries a hash of its contents (tools/check-fonts.js
+// enforces it), so a file with the same name is the same font in every version.
+// That lets an update keep the fonts it already has instead of downloading
+// them again. Keep this list in step with fonts/fonts.css.
 const FONT_FILES = [
   'fonts/fonts.css',
-  'fonts/inter-latin.woff2', 'fonts/inter-latin-ext.woff2',
-  'fonts/inter-cyrillic.woff2', 'fonts/inter-cyrillic-ext.woff2',
-  'fonts/inter-greek.woff2', 'fonts/inter-greek-ext.woff2',
-  'fonts/inter-vietnamese.woff2',
-  'fonts/lexend-latin.woff2', 'fonts/lexend-latin-ext.woff2', 'fonts/lexend-vietnamese.woff2',
-  'fonts/material-symbols-outlined.woff2',
+  'fonts/inter-latin.3100e775.woff2', 'fonts/inter-latin-ext.34b9c504.woff2',
+  'fonts/inter-cyrillic.71d5ee93.woff2', 'fonts/inter-cyrillic-ext.ca157063.woff2',
+  'fonts/inter-greek.1be3448e.woff2', 'fonts/inter-greek-ext.6e9e020a.woff2',
+  'fonts/inter-vietnamese.5c66f9e0.woff2',
+  'fonts/lexend-latin.b7e7538f.woff2', 'fonts/lexend-latin-ext.b5d815d4.woff2',
+  'fonts/lexend-vietnamese.aab0b318.woff2',
+  'fonts/material-symbols-outlined.6cc81722.woff2',
 ];
+const ICON_FONT = FONT_FILES.find(f => f.startsWith('fonts/material-symbols-outlined.'));
 
-// Files this version can't run without (see install). The page and the font
+// Files an update can't run without (see install). The page and the font
 // stylesheet must match each other, and without the icon font every icon shows
 // as its text name offline. The text fonts are optional: if one misses, the
 // fetch handler below caches it the next time the app is online.
-const REQUIRED = ['index.html', 'fonts/fonts.css', 'fonts/material-symbols-outlined.woff2'];
+const REQUIRED = ['index.html', 'fonts/fonts.css', ICON_FONT];
 
-// Longest wait for one file. The icon font is about 1.1 MB, which takes about
-// 150 s at 60 kbit/s.
+// Longest wait for one download. The icon font is about 1.1 MB, and the first
+// update downloads it alongside the rest of the app.
 const DOWNLOAD_LIMIT_MS = 240000;
 
-// Install downloads into this cache first and copies into CACHE_NAME only once
-// every required file arrived, so a failed or interrupted install never leaves
-// a mixed set of files where any version can read them. Font files that a
-// failed attempt finished downloading are kept here for the next attempt, so a
-// slow connection gets closer each time instead of starting over.
+// Install collects files here and copies them into CACHE_NAME only once every
+// required file is in, so a failed update never half-fills a version's cache.
+// Hashed font files a failed attempt finished are kept here for the next
+// attempt, so a slow connection resumes instead of starting over.
 const STAGING = CACHE_NAME + '-staging';
+
+// A font file that is safe to reuse from another cache: hashed, so the name
+// fixes the contents. fonts.css is not hashed and is always downloaded fresh.
+const isHashedFont = path => /\/fonts\/[^/]+\.[0-9a-f]{8}\.woff2$/.test(path);
 
 // ── INSTALL ────────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -60,45 +68,57 @@ self.addEventListener('install', event => {
         base + 'apple-touch-icon.png',
         ...FONT_FILES.map(f => base + f),
       ];
+      const pathOf = req => new URL(req.url).pathname;
       const staging = await caches.open(STAGING);
-      const fresh = new Set();
-      // Keep only the font files from an earlier attempt of this version (they
-      // change only with a CACHE_NAME bump); everything else is fetched again.
+      const ready = new Set();
+      // Keep only hashed font files from an earlier attempt of this version.
       for (const req of await staging.keys()) {
-        if (new URL(req.url).pathname.startsWith(base + 'fonts/') && (await staging.match(req))) {
-          fresh.add(new URL(req.url).pathname);
-        } else {
-          await staging.delete(req);
+        if (isHashedFont(pathOf(req)) && shell.includes(pathOf(req))) ready.add(pathOf(req));
+        else await staging.delete(req);
+      }
+      // Reuse hashed font files any earlier version already has.
+      const olds = (await caches.keys()).filter(k => k !== CACHE_NAME && k !== STAGING && k.startsWith('apparatus-'));
+      for (const url of shell) {
+        if (!isHashedFont(url) || ready.has(url)) continue;
+        for (const key of olds) {
+          const prev = await (await caches.open(key)).match(url);
+          if (prev && prev.ok) { await staging.put(url, prev); ready.add(url); break; }
         }
       }
-      // Cache individually — don't let one missing icon abort install
-      // Fetch past the HTTP cache so a new worker never stores the old shell.
-      // Each file is bounded (download and cache write together), and a
-      // timed-out download is aborted so it can't finish later.
-      await Promise.allSettled(shell.filter(url => !fresh.has(url)).map(async url => {
+      // Download the rest. Fetch past the HTTP cache so a new worker never
+      // stores the old shell. Each download is bounded, and a timed-out one is
+      // aborted so it can't finish later. One failure doesn't stop the others.
+      await Promise.allSettled(shell.filter(url => !ready.has(url)).map(async url => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), DOWNLOAD_LIMIT_MS);
         try {
           const res = await fetch(url, { cache: 'no-cache', signal: ctrl.signal });
-          if (res.ok) { await staging.put(url, res); fresh.add(url); }
+          if (res.ok) { await staging.put(url, res); ready.add(url); }
         } finally {
           clearTimeout(timer);
         }
       }));
+      // On a first install there is no earlier version to fall back to, so
+      // keep whatever arrived; the fetch handler fills gaps when online.
+      const updating = !!self.registration.active;
       let created = false;
       try {
-        // These must be this version's own copies. If one couldn't be
-        // downloaded, fail the install so the current version stays in
-        // charge; the next update check tries again.
-        for (const url of REQUIRED.map(f => base + f)) {
-          if (!fresh.has(url)) throw new Error('update incomplete: ' + url);
+        // An update must have this version's own copies of these. If one is
+        // missing, fail the install so the current version stays in charge;
+        // the next update check tries again.
+        if (updating) {
+          for (const url of REQUIRED.map(f => base + f)) {
+            if (!ready.has(url)) throw new Error('update incomplete: ' + url);
+          }
         }
         // The bare folder address opens the same page as index.html.
-        if (!fresh.has(base)) await staging.put(base, await staging.match(base + 'index.html'));
+        if (!ready.has(base)) {
+          const page = await staging.match(base + 'index.html');
+          if (page) await staging.put(base, page);
+        }
         // An icon or manifest that failed to download keeps the previous
-        // version's copy. Fonts are never carried over: an older font file
-        // with this version's stylesheet could lack new icons.
-        const olds = (await caches.keys()).filter(k => k !== CACHE_NAME && k !== STAGING && k.startsWith('apparatus-'));
+        // version's copy. fonts.css is never carried over: an older stylesheet
+        // could name font files this version doesn't have.
         for (const url of shell) {
           if (url.startsWith(base + 'fonts/') || await staging.match(url)) continue;
           for (const key of olds) {
@@ -112,10 +132,10 @@ self.addEventListener('install', event => {
       } catch (e) {
         // A copy cut short (storage full) must not leave a half-filled cache.
         if (created) await caches.delete(CACHE_NAME).catch(() => {});
-        // Keep only the finished font files for the next attempt.
+        // Keep only the finished hashed font files for the next attempt.
         try {
           for (const req of await staging.keys()) {
-            if (!new URL(req.url).pathname.startsWith(base + 'fonts/')) await staging.delete(req);
+            if (!isHashedFont(pathOf(req))) await staging.delete(req);
           }
         } catch (e2) {}
         throw e;
@@ -155,10 +175,18 @@ self.addEventListener('fetch', event => {
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       const base = new URL('./', self.location).pathname;
-      const cached = async () =>
-        await caches.match(request, { ignoreSearch: true }) ||
-        await caches.match(base + 'index.html') ||
-        await caches.match(base);
+      // Only this version's cache: an update in progress keeps its new files
+      // in the staging cache, and those must not reach a page yet.
+      const cached = async () => {
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          return await cache.match(request, { ignoreSearch: true }) ||
+            await cache.match(base + 'index.html') ||
+            await cache.match(base);
+        } catch (e) {
+          return undefined;
+        }
+      };
       // no-cache: revalidate with the server so GitHub Pages' 10-minute
       // HTTP cache can't hand back yesterday's index.html.
       let saved = Promise.resolve();
@@ -182,9 +210,10 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // All other same-origin requests — cache-first
+  // All other same-origin requests — cache-first, from this version's own
+  // cache only, so files another version left behind are never mixed in.
   event.respondWith(
-    caches.match(request).then(cached => {
+    caches.open(CACHE_NAME).then(cache => cache.match(request)).catch(() => undefined).then(cached => {
       if (cached) return cached;
       return fetch(request).then(res => {
         if (res.ok) put(request, res.clone());
