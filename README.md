@@ -4,7 +4,7 @@ A single-file training tracker that runs as an installable PWA. Log sessions,
 score them, track 1RM baselines, and drive the whole thing from a program
 definition rather than hardcoded workouts.
 
-Everything ships in `index.html` — no build step, no dependencies. Open it over
+The app ships in `index.html` (plus self-hosted fonts in `fonts/`) — no build step, no dependencies. Open it over
 HTTP (a service worker needs a real origin, not `file://`) and it works offline
 from then on.
 
@@ -99,6 +99,8 @@ manifest.json                   PWA manifest
 icon-192.png / icon-512.png     app icons (Plate A logo)
 favicon.svg / favicon-32.png    browser tab icon (simplified cut for small sizes)
 apple-touch-icon.png            iPhone home-screen icon
+fonts/                          self-hosted fonts + licences (keep FONT_FILES in sw.js
+                                in step with fonts.css; bump CACHE_NAME when a font changes)
 programs/*.json                 program definitions
 programs/index.json             ordered list of what ships; first is the default
 tools/embed-program.js          validates them and inlines them into index.html

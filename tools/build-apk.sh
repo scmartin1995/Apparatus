@@ -3,7 +3,7 @@
 #
 #   tools/build-apk.sh            # writes android/build/apparatus.apk
 #
-# Needs: java/javac, node, curl, aapt, zipalign, apksigner, dalvik-exchange
+# Needs: java/javac, node, aapt, zipalign, apksigner, dalvik-exchange
 # and an android.jar. On Ubuntu:
 #   apt-get install aapt apksigner zipalign dalvik-exchange android-sdk-platform-23
 #
@@ -27,10 +27,10 @@ VERSION_NAME="${VERSION_NAME:-$(date -u +%Y.%m.%d)-$(git -C "$ROOT" rev-parse --
 
 mkdir -p "$OUT"
 rm -rf "$OUT/assets" "$OUT/res" "$OUT/classes" "$OUT/dex"
-mkdir -p "$OUT/assets" "$OUT/res/mipmap-xxxhdpi" "$OUT/classes" "$OUT/dex" "$OUT/fonts"
+mkdir -p "$OUT/assets" "$OUT/res/mipmap-xxxhdpi" "$OUT/classes" "$OUT/dex"
 
-# Web app, with the Google fonts bundled so icons work with no network.
-node "$ROOT/tools/bundle-web.js" "$ROOT" "$OUT/assets" "$OUT/fonts"
+# Web app, with its bundled fonts, so icons work with no network.
+node "$ROOT/tools/bundle-web.js" "$ROOT" "$OUT/assets"
 
 cp -r "$SRC/res/." "$OUT/res/"
 cp "$ROOT/icon-192.png" "$OUT/res/mipmap-xxxhdpi/ic_launcher.png"
