@@ -7,7 +7,9 @@ const path = require('path');
 
 function checkFonts(root) {
   const css = fs.readFileSync(path.join(root, 'fonts', 'fonts.css'), 'utf8');
-  const used = new Set(['fonts/fonts.css', ...[...css.matchAll(/url\(([^)'"]+)\)/g)].map(m => 'fonts/' + m[1])]);
+  // url(x), url('x') or url("x"); a ?query or #fragment is not part of the file name.
+  const used = new Set(['fonts/fonts.css',
+    ...[...css.matchAll(/url\(\s*['"]?([^)'"]+?)['"]?\s*\)/g)].map(m => 'fonts/' + m[1].split(/[?#]/)[0])]);
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const block = (sw.match(/const FONT_FILES = \[([\s\S]*?)\];/) || [])[1];
   if (!block) throw new Error('FONT_FILES not found in sw.js');
@@ -18,11 +20,17 @@ function checkFonts(root) {
     throw new Error('sw.js FONT_FILES and fonts/fonts.css disagree. Missing from FONT_FILES: ' +
       (missing.join(', ') || 'none') + '. Not used by fonts.css: ' + (extra.join(', ') || 'none'));
   }
+  // Every font file the install requires must be one the app ships.
+  const req = (sw.match(/const REQUIRED = \[([\s\S]*?)\];/) || [])[1];
+  if (!req) throw new Error('REQUIRED not found in sw.js');
+  const badReq = [...req.matchAll(/'([^']+)'/g)].map(m => m[1]).filter(f => f.startsWith('fonts/') && !listed.has(f));
+  if (badReq.length) throw new Error('sw.js REQUIRED names fonts not in FONT_FILES: ' + badReq.join(', '));
   for (const f of used) {
     if (!fs.statSync(path.join(root, f), { throwIfNoEntry: false })?.isFile()) throw new Error('missing font file: ' + f);
   }
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   if (/fonts\.g(oogleapis|static)\.com/.test(html)) throw new Error('index.html still loads fonts from Google');
+  if (!/<link href="fonts\/fonts\.css" rel="stylesheet"\/?>/.test(html)) throw new Error('index.html does not link fonts/fonts.css');
   return [...used];
 }
 

@@ -33,12 +33,15 @@ const FONT_FILES = [
 // fetch handler below caches it the next time the app is online.
 const REQUIRED = ['index.html', 'fonts/fonts.css', 'fonts/material-symbols-outlined.woff2'];
 
-// Longest wait for one file. The icon font is about 1.1 MB.
-const DOWNLOAD_LIMIT_MS = 120000;
+// Longest wait for one file. The icon font is about 1.1 MB, which takes about
+// 150 s at 60 kbit/s.
+const DOWNLOAD_LIMIT_MS = 240000;
 
 // Install downloads into this cache first and copies into CACHE_NAME only once
 // every required file arrived, so a failed or interrupted install never leaves
-// a mixed set of files where any version can read them.
+// a mixed set of files where any version can read them. Font files that a
+// failed attempt finished downloading are kept here for the next attempt, so a
+// slow connection gets closer each time instead of starting over.
 const STAGING = CACHE_NAME + '-staging';
 
 // ── INSTALL ────────────────────────────────────────────────
@@ -57,15 +60,22 @@ self.addEventListener('install', event => {
         base + 'apple-touch-icon.png',
         ...FONT_FILES.map(f => base + f),
       ];
-      // Start clean: an earlier attempt may have been cut off mid-download.
-      await caches.delete(STAGING).catch(() => {});
       const staging = await caches.open(STAGING);
       const fresh = new Set();
+      // Keep only the font files from an earlier attempt of this version (they
+      // change only with a CACHE_NAME bump); everything else is fetched again.
+      for (const req of await staging.keys()) {
+        if (new URL(req.url).pathname.startsWith(base + 'fonts/') && (await staging.match(req))) {
+          fresh.add(new URL(req.url).pathname);
+        } else {
+          await staging.delete(req);
+        }
+      }
       // Cache individually — don't let one missing icon abort install
       // Fetch past the HTTP cache so a new worker never stores the old shell.
       // Each file is bounded (download and cache write together), and a
       // timed-out download is aborted so it can't finish later.
-      await Promise.allSettled(shell.map(async url => {
+      await Promise.allSettled(shell.filter(url => !fresh.has(url)).map(async url => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), DOWNLOAD_LIMIT_MS);
         try {
@@ -75,6 +85,7 @@ self.addEventListener('install', event => {
           clearTimeout(timer);
         }
       }));
+      let created = false;
       try {
         // These must be this version's own copies. If one couldn't be
         // downloaded, fail the install so the current version stays in
@@ -95,11 +106,21 @@ self.addEventListener('install', event => {
             if (prev && prev.ok) { await staging.put(url, prev); break; }
           }
         }
+        created = !(await caches.has(CACHE_NAME));
         const cache = await caches.open(CACHE_NAME);
         for (const req of await staging.keys()) await cache.put(req, await staging.match(req));
-      } finally {
-        await caches.delete(STAGING).catch(() => {});
+      } catch (e) {
+        // A copy cut short (storage full) must not leave a half-filled cache.
+        if (created) await caches.delete(CACHE_NAME).catch(() => {});
+        // Keep only the finished font files for the next attempt.
+        try {
+          for (const req of await staging.keys()) {
+            if (!new URL(req.url).pathname.startsWith(base + 'fonts/')) await staging.delete(req);
+          }
+        } catch (e2) {}
+        throw e;
       }
+      await caches.delete(STAGING).catch(() => {});
       await self.skipWaiting();
     })()
   );
