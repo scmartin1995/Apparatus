@@ -27,13 +27,19 @@ const FONT_FILES = [
   'fonts/material-symbols-outlined.woff2',
 ];
 
-// Small files this version can't run without (see install). The font files
-// themselves are not required: if one misses, the fetch handler below caches
-// it the next time the app is online, as Google's fonts were before.
-const REQUIRED = ['', 'index.html', 'fonts/fonts.css'];
+// Files this version can't run without (see install). The page and the font
+// stylesheet must match each other, and without the icon font every icon shows
+// as its text name offline. The text fonts are optional: if one misses, the
+// fetch handler below caches it the next time the app is online.
+const REQUIRED = ['index.html', 'fonts/fonts.css', 'fonts/material-symbols-outlined.woff2'];
 
-// Longest wait for one shell file. The icon font is about 1.1 MB.
+// Longest wait for one file. The icon font is about 1.1 MB.
 const DOWNLOAD_LIMIT_MS = 120000;
+
+// Install downloads into this cache first and copies into CACHE_NAME only once
+// every required file arrived, so a failed or interrupted install never leaves
+// a mixed set of files where any version can read them.
+const STAGING = CACHE_NAME + '-staging';
 
 // ── INSTALL ────────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -51,48 +57,48 @@ self.addEventListener('install', event => {
         base + 'apple-touch-icon.png',
         ...FONT_FILES.map(f => base + f),
       ];
-      // A cache of this name from before (sw.js changed without a CACHE_NAME
-      // bump) may be the live one, so a failed install must leave it alone.
-      const existed = await caches.has(CACHE_NAME);
-      const cache = await caches.open(CACHE_NAME);
+      // Start clean: an earlier attempt may have been cut off mid-download.
+      await caches.delete(STAGING).catch(() => {});
+      const staging = await caches.open(STAGING);
       const fresh = new Set();
       // Cache individually — don't let one missing icon abort install
       // Fetch past the HTTP cache so a new worker never stores the old shell.
-      // Each file is bounded (download and cache write together) so a stalled
-      // download can't hold up an update. The abort stops a timed-out download
-      // from finishing later and writing into this cache.
+      // Each file is bounded (download and cache write together), and a
+      // timed-out download is aborted so it can't finish later.
       await Promise.allSettled(shell.map(async url => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), DOWNLOAD_LIMIT_MS);
         try {
           const res = await fetch(url, { cache: 'no-cache', signal: ctrl.signal });
-          if (res.ok) { await cache.put(url, res); fresh.add(url); }
+          if (res.ok) { await staging.put(url, res); fresh.add(url); }
         } finally {
           clearTimeout(timer);
         }
       }));
-      // A file that failed to download keeps the previous version's copy,
-      // so the app still opens offline after an update on a bad connection.
       try {
-        const olds = (await caches.keys()).filter(k => k !== CACHE_NAME && k.startsWith('apparatus-'));
+        // These must be this version's own copies. If one couldn't be
+        // downloaded, fail the install so the current version stays in
+        // charge; the next update check tries again.
+        for (const url of REQUIRED.map(f => base + f)) {
+          if (!fresh.has(url)) throw new Error('update incomplete: ' + url);
+        }
+        // The bare folder address opens the same page as index.html.
+        if (!fresh.has(base)) await staging.put(base, await staging.match(base + 'index.html'));
+        // An icon or manifest that failed to download keeps the previous
+        // version's copy. Fonts are never carried over: an older font file
+        // with this version's stylesheet could lack new icons.
+        const olds = (await caches.keys()).filter(k => k !== CACHE_NAME && k !== STAGING && k.startsWith('apparatus-'));
         for (const url of shell) {
-          if (await cache.match(url)) continue;
+          if (url.startsWith(base + 'fonts/') || await staging.match(url)) continue;
           for (const key of olds) {
             const prev = await (await caches.open(key)).match(url);
-            if (prev && prev.ok) { await cache.put(url, prev); break; }
+            if (prev && prev.ok) { await staging.put(url, prev); break; }
           }
         }
-      } catch (e) {}
-      // These must be this version's own copies: an older index.html (or font
-      // stylesheet) paired with this version's fonts would leave the icons
-      // broken offline. If one couldn't be downloaded, fail the install so the
-      // current version stays in charge; the next update check tries again.
-      // A half-filled new cache is removed so the old version never reads it.
-      for (const url of REQUIRED.map(f => base + f)) {
-        if (!fresh.has(url)) {
-          if (!existed) await caches.delete(CACHE_NAME).catch(() => {});
-          throw new Error('update incomplete: ' + url);
-        }
+        const cache = await caches.open(CACHE_NAME);
+        for (const req of await staging.keys()) await cache.put(req, await staging.match(req));
+      } finally {
+        await caches.delete(STAGING).catch(() => {});
       }
       await self.skipWaiting();
     })()

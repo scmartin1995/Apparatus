@@ -26,7 +26,7 @@ VERSION_CODE="${VERSION_CODE:-$(( $(date -u +%s) / 60 ))}"
 VERSION_NAME="${VERSION_NAME:-$(date -u +%Y.%m.%d)-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)}"
 
 mkdir -p "$OUT"
-rm -rf "$OUT/assets" "$OUT/res" "$OUT/classes" "$OUT/dex"
+rm -rf "$OUT/assets" "$OUT/res" "$OUT/classes" "$OUT/dex" "$OUT/fonts"
 mkdir -p "$OUT/assets" "$OUT/res/mipmap-xxxhdpi" "$OUT/classes" "$OUT/dex"
 
 # Web app, with its bundled fonts, so icons work with no network.
