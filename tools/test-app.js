@@ -3384,3 +3384,12 @@ describe('a Session recorded before Substitutions existed', () => {
       'correcting an older record does not invent a Substitution');
   });
 });
+
+// ── INTEGRATION: REVERT THROUGH A PERMANENT SUBSTITUTION ───
+// (the two-layer revert test goes here)
+
+// ── TICKET 07: PERMANENT SUBSTITUTIONS IN THE PROGRAM VIEW ─
+// (ticket 07's tests go here)
+
+// ── TICKET 08: END-OF-SESSION PROMOTION PROMPT ─────────────
+// (ticket 08's tests go here)

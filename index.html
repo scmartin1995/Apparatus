@@ -2481,7 +2481,11 @@ function applyScheme(entry, cat, numSets, repLow, repHigh) {
 // get it wrong quietly.
 function prescribedItemFor(cat, key) {
   if (!session) return null;
-  const day = DAYS.find(d => d.id === session.dayType);
+  // The effective Day, not the raw one: a Permanent Substitution is what this
+  // Day prescribes now, so reverting a day-only Substitution made on top of one
+  // gives back the permanent substitute rather than the Program's Movement —
+  // which is what the lifter was shown when the Session started.
+  const day = effectiveDay(DAYS.find(d => d.id === session.dayType));
   if (!day || !day.sections) return null;
   const parts = String(key).split('-');
   const sec = day.sections[parseInt(parts[0], 10)];
