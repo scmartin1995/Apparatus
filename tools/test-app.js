@@ -3386,7 +3386,114 @@ describe('a Session recorded before Substitutions existed', () => {
 });
 
 // ── INTEGRATION: REVERT THROUGH A PERMANENT SUBSTITUTION ───
-// (the two-layer revert test goes here)
+// Tickets 05 and 06 were built in separate worktrees, blind to each other, so
+// neither could cover the place they meet: prescribedItemFor resolves a
+// snapshot key through the *effective* Day rather than the raw one. That one
+// lookup decides what "back to prescribed" means for a lifter who has a
+// Permanent Substitution on the Day — the permanent substitute they were shown
+// when the Session started, not the Movement the Program ships.
+describe('reverting a day-only Substitution made on top of a Permanent one', () => {
+  test('lands on the permanent substitute with its stored scheme, not the Program’s Movement', () => {
+    const app = loadApp();
+    importTwoDayProgram(app);
+    const day = app.DAYS[0];
+    // Read off the Program, so the test states what it is distinguishing from
+    // rather than repeating a scheme string that could drift.
+    const prescribed = { name: day.sections[0].items[0].name, sets: day.sections[0].items[0].sets };
+
+    startOn(app, day);
+    assert.ok(substitutePermanently(app, 'primary', '0-0', 'Belt Squat',
+      { sets: 4, repLow: 6, repHigh: 8 }), 'the Permanent Substitution was made');
+    const storedScheme = plain(app.loadOverrides())[day.id][prescribed.name].sets;
+    assert.notEqual(storedScheme, prescribed.sets,
+      'the Permanent Substitution carries a scheme of its own, so the two are tellable apart');
+    const storeBefore = plain(app.readOverrideMap());
+
+    // A new Session, where the Belt Squat is the machine that is busy today.
+    const s = startOn(app, day);
+    assert.equal(entryIn(s, 'primary', '0-0').name, 'Belt Squat',
+      'the permanent substitute is what this Day prescribes now');
+    assert.ok(substituteVia(app, 'primary', '0-0', 'Goblet Squat'));
+    logSomething('primary', entryIn(s, 'primary', '0-0'));
+
+    const askedBefore = app.confirmsAsked().length;
+    app.answerConfirm(true);
+    assert.ok(revertVia(app, 'primary', '0-0'), 'the revert went through');
+    assert.equal(app.confirmsAsked().length, askedBefore + 1,
+      'the logged work a revert discards is still worth asking about here');
+
+    const back = entryIn(s, 'primary', '0-0');
+    assert.equal(back.name, 'Belt Squat',
+      'back to what the lifter was shown when the Session started, not to the Program');
+    assert.equal(back.setsStr, storedScheme,
+      'and back with the scheme the Permanent Substitution was stored with');
+    assert.deepEqual(plain(back.target), { numSets: 4, repLow: 6, repHigh: 8 },
+      'the stored scheme is what session mode now targets');
+    assert.equal(back.sets.length, 4, 'with the sets that scheme calls for');
+    assert.equal(back.substitutedFor, null,
+      'nothing stands in for anything any more');
+    assert.equal(back.baselineId, null,
+      'the effective Day prescribes an unbound substitute, so the entry carries no binding');
+
+    assert.deepEqual(plain(app.readOverrideMap()), storeBefore,
+      'reverting today’s workaround is not a decision to undo a settled one');
+    assert.equal(app.initSession(day.id).primaries['0-0'].name, 'Belt Squat',
+      'and the next Session of that Day still starts with the Permanent Substitution');
+  });
+
+  test('does not resurrect the Baseline binding of the Lift that was substituted away', () => {
+    const app = loadAppWithProgram(PPL);
+    const m = boundLift(app);
+    assert.ok(m, 'a Movement is bound to a Baseline');
+    assert.ok(m.item.baselineId, 'the Program binds it to a Lift');
+
+    startOn(app, m.day);
+    assert.ok(substitutePermanently(app, m.cat, m.key, 'Belt Squat'),
+      'the bound Lift was permanently substituted away');
+
+    const s = startOn(app, m.day);
+    assert.equal(entryIn(s, m.cat, m.key).baselineId, null,
+      'the permanent substitute starts unbound — it is a different exercise');
+
+    assert.ok(substituteVia(app, m.cat, m.key, 'Goblet Squat'));
+    const askedBefore = app.confirmsAsked().length;
+    assert.ok(revertVia(app, m.cat, m.key), 'the revert went through');
+    assert.equal(app.confirmsAsked().length, askedBefore,
+      'nothing was logged against the workaround, so there was nothing to ask about');
+
+    const back = entryIn(s, m.cat, m.key);
+    assert.equal(back.name, 'Belt Squat', 'the revert lands on the permanent substitute');
+    assert.equal(back.baselineId, null,
+      'reverting onto it must not prescribe a barbell load for a movement that is not the Lift');
+    assert.equal(back.substitutedFor, null);
+  });
+
+  test('a Day carrying no Permanent Substitution still reverts to the Program', () => {
+    const app = loadApp();
+    importTwoDayProgram(app);
+    const dayA = app.DAYS[0], dayB = app.DAYS[1];
+    const prescribed = { name: dayB.sections[0].items[0].name, sets: dayB.sections[0].items[0].sets };
+
+    startOn(app, dayA);
+    assert.ok(substitutePermanently(app, 'primary', '0-0', 'Belt Squat'));
+    const store = plain(app.loadOverrides());
+    assert.ok(store[dayA.id], 'the decision was recorded against the Day it was made on');
+    assert.equal(store[dayB.id], undefined,
+      'and not against the other Day, though it prescribes the same Movement');
+
+    const s = startOn(app, dayB);
+    assert.equal(entryIn(s, 'primary', '0-0').name, prescribed.name,
+      'the other Day still starts on what the Program prescribes');
+    assert.ok(substituteVia(app, 'primary', '0-0', 'Goblet Squat'));
+    assert.ok(revertVia(app, 'primary', '0-0'), 'the revert went through');
+
+    const back = entryIn(s, 'primary', '0-0');
+    assert.equal(back.name, prescribed.name,
+      'and reverting there lands on the Program, not on the other Day’s decision');
+    assert.equal(back.setsStr, prescribed.sets, 'with the Program’s scheme');
+    assert.equal(back.substitutedFor, null);
+  });
+});
 
 // ── TICKET 07: PERMANENT SUBSTITUTIONS IN THE PROGRAM VIEW ─
 // (ticket 07's tests go here)
