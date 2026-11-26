@@ -177,6 +177,7 @@ const EXPORTS = [
   'readOverrideMap', 'loadOverrides', 'saveOverrides', 'setOverride',
   'prescribedNameAt', 'effectiveDay',
   'generateCSVTemplate', 'renderBaselines',
+  'prescribedItemFor', 'loggedValuesIn', 'revertEntry', 'revertSubstitution',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];

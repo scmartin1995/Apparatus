@@ -2009,7 +2009,412 @@ describe('scoring parity survives a scheme edit', () => {
 });
 
 // ── TICKET 05: REVERT A SUBSTITUTION MID-SESSION ───────────
-// (ticket 05's tests go here)
+// Drives a revert the way a lifter does: open the substitution form on the
+// Movement, hit the revert control. Returns whether the form closed, so a
+// revert the lifter backed out of is visible to the test.
+function revertVia(app, cat, key) {
+  app.openSubstituteModal(cat, key);
+  app.revertSubstitution();
+  return !app.document.getElementById('substituteModal').classList.contains('open');
+}
+
+// Logs work against an entry whatever Section kind it belongs to, so a revert
+// always has something to throw away.
+function logSomething(cat, entry) {
+  if (cat === 'ar7') { entry.rounds = 5; entry.weight = '45'; return entry; }
+  fillSets(entry, 95, entry.target.repLow);
+  if (entry.rpe !== undefined) entry.rpe = 4;
+  return entry;
+}
+
+// A Movement bound to a Baseline, with the Day it sits on. Its working range is
+// drawn from the Lift's 1RM, which is what a revert has to bring back.
+function boundLift(app) {
+  for (const day of app.DAYS) {
+    if (day.isOff || !day.sections) continue;
+    for (let si = 0; si < day.sections.length; si++) {
+      const cat = app.classifySection(day.sections[si]);
+      if (cat === 'skip') continue;
+      const ii = day.sections[si].items.findIndex(i => i.baselineId);
+      if (ii >= 0) return { day, cat, key: si + '-' + ii, item: day.sections[si].items[ii] };
+    }
+  }
+  return null;
+}
+
+// The scheme as session mode puts it in front of the lifter, working range and
+// all.
+function targetShown(app, cat, key) {
+  return app.displaySets(app.snapshotAsMovement(app.entryFor(cat, key)));
+}
+
+describe('reverting a Substitution mid-Session', () => {
+  test('a Substitution in every logged Section type goes back while the Session is active', () => {
+    const types = oneOfEachSectionType();
+    types.forEach(t => {
+      const s = startOn(t.app, t.day);
+      const prescribed = entryIn(s, t.cat, t.key).name;
+      substituteVia(t.app, t.cat, t.key, 'Machine Version');
+      assert.equal(t.app.entryFor(t.cat, t.key).name, 'Machine Version', t.type);
+
+      assert.ok(revertVia(t.app, t.cat, t.key), t.type + ' refused the revert');
+      const entry = t.app.entryFor(t.cat, t.key);
+      assert.equal(entry.name, prescribed, t.type + ' did not get its Movement back');
+      assert.equal(entry.substitutedFor, null, t.type + ' still reads as a Substitution');
+    });
+    assert.deepEqual(types.map(t => t.type), ['primary', 'ar7', 'accessory', 'finisher'],
+      'every logged Section type was covered');
+  });
+
+  test('the prescribed name, scheme and baseline binding all come back together', () => {
+    const app = loadAppWithProgram(PPL);
+    const m = boundLift(app);
+    assert.ok(m, 'a Movement is bound to a Baseline');
+    startOn(app, m.day);
+
+    substituteWithScheme(app, m.cat, m.key, 'Hack Squat', { sets: 2, repLow: 20, repHigh: 25 });
+    const sub = app.entryFor(m.cat, m.key);
+    assert.notEqual(sub.setsStr, m.item.sets, 'the scheme really moved off the prescribed one');
+    assert.equal(sub.baselineId, null, 'the binding really was dropped');
+
+    assert.ok(revertVia(app, m.cat, m.key));
+    const entry = app.entryFor(m.cat, m.key);
+    assert.equal(entry.name, m.item.name, 'the name');
+    assert.equal(entry.setsStr, m.item.sets, 'the scheme');
+    assert.deepEqual(plain(entry.target), plain(app.parseSetsStr(m.item.sets)), 'the parsed target');
+    assert.equal(entry.baselineId, m.item.baselineId, 'the baseline binding');
+  });
+
+  test('the working range from the Lift’s 1RM reappears', () => {
+    const app = loadAppWithProgram(PPL);
+    const m = boundLift(app);
+    const b = app.loadBaselines().find(x => x.id === m.item.baselineId);
+    const range = app.workingRange(b.orm, b.pctLow, b.pctHigh);
+    startOn(app, m.day);
+
+    assert.ok(targetShown(app, m.cat, m.key).includes(range),
+      'the prescribed Lift shows a range drawn from its 1RM');
+    substituteVia(app, m.cat, m.key, 'Dumbbell Version');
+    assert.ok(!targetShown(app, m.cat, m.key).includes(range),
+      'the substitute is not prescribed a barbell load');
+
+    assert.ok(revertVia(app, m.cat, m.key));
+    assert.ok(targetShown(app, m.cat, m.key).includes(range), 'the working range is back');
+    assert.ok(renderActive(app, m.day).includes(range), 'and session mode shows it again');
+    const hint = app.getSuggestedWeight(m.item.name, m.item.sets, app.entryFor(m.cat, m.key).baselineId);
+    assert.equal(hint.source, 'baseline', 'the suggested load comes off the 1RM again');
+  });
+
+  test('the values logged against the substitute are cleared', () => {
+    const types = oneOfEachSectionType();
+    types.forEach(t => {
+      startOn(t.app, t.day);
+      substituteWithScheme(t.app, t.cat, t.key, 'Machine Version', { sets: 2, repLow: 20, repHigh: 20 });
+      logSomething(t.cat, t.app.entryFor(t.cat, t.key));
+      assert.ok(t.app.loggedValuesIn(t.app.entryFor(t.cat, t.key)) > 0,
+        t.type + ' had nothing logged to lose');
+
+      assert.ok(revertVia(t.app, t.cat, t.key), t.type + ' refused the revert');
+      const entry = t.app.entryFor(t.cat, t.key);
+      if (entry.sets) {
+        assert.equal(entry.sets.length, entry.target.numSets,
+          t.type + ' has the prescribed number of sets');
+        assert.deepEqual(plain(entry.sets), Array.from({ length: entry.sets.length }, () => ({ weight: '', reps: '' })),
+          t.type + ' kept logged sets');
+      }
+      if (t.cat === 'ar7') {
+        assert.equal(entry.rounds, 0, t.type + ' kept its rounds');
+        assert.equal(entry.weight, '', t.type + ' kept its load');
+      }
+      if (entry.rpe !== undefined) assert.equal(entry.rpe, 0, t.type + ' kept its RPE');
+    });
+  });
+
+  test('cleared values are never attributed to the prescribed Movement', () => {
+    // The suggested-weight lookup matches on Movement name, so values carried
+    // through a revert would come back next week as the prescribed Movement's
+    // own history.
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['accessory']);
+    const found = findSection(app, 'accessory', day.id);
+    const s = startOn(app, day);
+    const prescribed = s.accessories[found.key(0)].name;
+    const scheme = s.accessories[found.key(0)].setsStr;
+    assert.equal(app.getSuggestedWeight(prescribed, scheme, null), null,
+      'the prescribed Movement has no history yet');
+
+    substituteVia(app, 'accessory', found.key(0), 'Pec Deck');
+    fillSets(app.entryFor('accessory', found.key(0)), 95, 12);
+    assert.ok(revertVia(app, 'accessory', found.key(0)));
+    app.finishSession();
+
+    assert.equal(app.getSuggestedWeight(prescribed, scheme, null), null,
+      'the prescribed Movement did not inherit the substitute’s numbers');
+    assert.equal(app.getSuggestedWeight('Pec Deck', scheme, null), null,
+      'and neither did the substitute, which was not logged in the end');
+  });
+
+  test('a reverted Movement is indistinguishable from one never substituted', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    const control = app.initSession(day.id);
+
+    const s = startOn(app, day);
+    loggedMovements(app, day).forEach((m, i) => {
+      substituteWithScheme(app, m.cat, m.key, 'Substitute ' + i, { sets: 2, repLow: 20, repHigh: 25 });
+      logSomething(m.cat, app.entryFor(m.cat, m.key));
+    });
+    loggedMovements(app, day).forEach(m =>
+      assert.ok(revertVia(app, m.cat, m.key), m.cat + ' ' + m.key + ' refused the revert'));
+
+    assert.deepEqual(
+      plain({ primaries: s.primaries, ar7: s.ar7, accessories: s.accessories }),
+      plain({ primaries: control.primaries, ar7: control.ar7, accessories: control.accessories }),
+      'the snapshot is back to what starting the Session built');
+  });
+
+  test('session mode stops calling the Movement a Substitution', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = app.DAYS.find(d => !d.isOff);
+    const found = findSection(app, 'primary', day.id);
+    const s = startOn(app, day);
+    const prescribed = s.primaries[found.key(0)].name;
+
+    substituteVia(app, 'primary', found.key(0), 'Hack Squat');
+    assert.ok(renderActive(app, day).includes('Hack Squat'), 'the substitute was on screen');
+
+    revertVia(app, 'primary', found.key(0));
+    const html = renderActive(app, day);
+    assert.ok(html.includes(prescribed), 'the prescribed Movement is named again');
+    assert.ok(!html.includes('Hack Squat'), 'the substitute is gone');
+    assert.ok(!html.includes('replaces'), 'nothing claims to replace anything');
+  });
+
+  test('the Program is untouched by a revert, as it was by the Substitution', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = app.DAYS.find(d => !d.isOff);
+    const found = findSection(app, 'primary', day.id);
+    const before = plain(app.PROGRAM);
+    startOn(app, day);
+
+    substituteWithScheme(app, 'primary', found.key(0), 'Hack Squat', { sets: 5, repLow: 12, repHigh: 15 });
+    revertVia(app, 'primary', found.key(0));
+
+    assert.deepEqual(plain(app.PROGRAM), before, 'the Program prescribes what it always did');
+  });
+
+  test('a Movement can be substituted again after a revert', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = app.DAYS.find(d => !d.isOff);
+    const found = findSection(app, 'primary', day.id);
+    const s = startOn(app, day);
+    const prescribed = s.primaries[found.key(0)].name;
+
+    substituteVia(app, 'primary', found.key(0), 'Hack Squat');
+    revertVia(app, 'primary', found.key(0));
+    assert.ok(substituteVia(app, 'primary', found.key(0), 'Pendulum Squat'));
+
+    const entry = app.entryFor('primary', found.key(0));
+    assert.equal(entry.name, 'Pendulum Squat');
+    assert.equal(entry.substitutedFor, prescribed,
+      'the second Substitution still points at what the Program asked for');
+  });
+});
+
+describe('what reverting asks before it discards logged work', () => {
+  test('reverting asks first when values are filled, naming both Movements', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = app.DAYS.find(d => !d.isOff);
+    const found = findSection(app, 'primary', day.id);
+    const s = startOn(app, day);
+    const prescribed = s.primaries[found.key(0)].name;
+
+    substituteVia(app, 'primary', found.key(0), 'Hack Squat');
+    fillSets(app.entryFor('primary', found.key(0)), 185, 8);
+
+    const before = app.confirmsAsked().length;
+    app.answerConfirm(true);
+    assert.ok(revertVia(app, 'primary', found.key(0)));
+
+    assert.equal(app.confirmsAsked().length - before, 1, 'asked once');
+    const asked = app.lastConfirm();
+    assert.ok(asked.includes(prescribed), 'says what it is going back to');
+    assert.ok(asked.includes('Hack Squat'), 'says whose values are being discarded');
+  });
+
+  test('cancelling the confirmation leaves the Substitution and its values intact', () => {
+    const types = oneOfEachSectionType();
+    types.forEach(t => {
+      startOn(t.app, t.day);
+      substituteWithScheme(t.app, t.cat, t.key, 'Machine Version', { sets: 3, repLow: 12, repHigh: 15 });
+      logSomething(t.cat, t.app.entryFor(t.cat, t.key));
+      const before = plain(t.app.entryFor(t.cat, t.key));
+
+      t.app.answerConfirm(false);
+      assert.equal(revertVia(t.app, t.cat, t.key), false, t.type + ': the form closed anyway');
+      assert.deepEqual(plain(t.app.entryFor(t.cat, t.key)), before,
+        t.type + ': a refused revert changed something');
+    });
+  });
+
+  test('a single value logged anywhere is enough to be asked about', () => {
+    const byType = {};
+    oneOfEachSectionType().forEach(t => { byType[t.type] = t; });
+    const cases = [
+      ['primary', 'one rep', e => { e.sets[0].reps = '8'; }],
+      ['accessory', 'one weight', e => { e.sets[0].weight = '60'; }],
+      ['accessory', 'an RPE', e => { e.rpe = 4; }],
+      ['ar7', 'a round', e => { e.rounds = 3; }],
+      ['ar7', 'a load', e => { e.weight = '45'; }],
+    ];
+    cases.forEach(([type, what, log]) => {
+      const t = byType[type];
+      startOn(t.app, t.day);
+      substituteVia(t.app, t.cat, t.key, 'Machine Version');
+      log(t.app.entryFor(t.cat, t.key));
+
+      const before = t.app.confirmsAsked().length;
+      t.app.answerConfirm(false);
+      assert.equal(revertVia(t.app, t.cat, t.key), false, what + ' was reverted without asking');
+      assert.equal(t.app.confirmsAsked().length - before, 1, what + ' was not asked about');
+      assert.ok(t.app.entryFor(t.cat, t.key).substitutedFor,
+        what + ': the Substitution went anyway');
+    });
+  });
+
+  test('reverting with nothing logged is not worth asking about', () => {
+    const types = oneOfEachSectionType();
+    types.forEach(t => {
+      startOn(t.app, t.day);
+      substituteVia(t.app, t.cat, t.key, 'Machine Version');
+
+      const before = t.app.confirmsAsked().length;
+      // A spurious confirm is refused, so it fails the count and the revert.
+      t.app.answerConfirm(false);
+      assert.ok(revertVia(t.app, t.cat, t.key), t.type + ' asked and was refused');
+      assert.equal(t.app.confirmsAsked().length - before, 0,
+        t.type + ' asked about work the lifter had not done');
+      assert.equal(t.app.entryFor(t.cat, t.key).substitutedFor, null, t.type);
+    });
+  });
+
+  test('reverting a Movement that was never substituted changes nothing and asks nothing', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = app.DAYS.find(d => !d.isOff);
+    const found = findSection(app, 'primary', day.id);
+    const s = startOn(app, day);
+    fillSets(s.primaries[found.key(0)], 185, 5);
+    const before = plain(s.primaries[found.key(0)]);
+
+    const asked = app.confirmsAsked().length;
+    app.answerConfirm(false);
+    revertVia(app, 'primary', found.key(0));
+
+    assert.deepEqual(plain(app.entryFor('primary', found.key(0))), before,
+      'the prescribed Movement and its logged work are as they were');
+    assert.equal(app.confirmsAsked().length - asked, 0, 'nothing was asked');
+  });
+});
+
+describe('where a revert reads the prescribed Movement from', () => {
+  // `substitutedFor` holds a name, not a scheme or a binding, so a revert has
+  // to go back to the Day the Session was started from. One lookup does that
+  // for every call site, so the effective-Day resolver has one line to change.
+  test('every snapshot key resolves to the Movement the Day prescribes at that position', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    startOn(app, day);
+
+    const movements = loggedMovements(app, day);
+    assert.ok(movements.length > 2, 'the Day prescribes several logged Movements');
+    movements.forEach(m => {
+      const item = app.prescribedItemFor(m.cat, m.key);
+      assert.ok(item, m.cat + ' ' + m.key + ' resolved to nothing');
+      assert.equal(item.name, m.name, m.cat + ' ' + m.key);
+    });
+  });
+
+  test('a position the Day does not prescribe resolves to nothing rather than to the wrong Movement', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    const found = findSection(app, 'primary', day.id);
+    startOn(app, day);
+
+    assert.equal(app.prescribedItemFor('primary', '99-0'), null, 'no such Section');
+    assert.equal(app.prescribedItemFor('primary', found.sectionIndex + '-99'), null, 'no such Movement');
+    assert.equal(app.prescribedItemFor('accessory', found.key(0)), null,
+      'a primary Section is not resolved as an accessory');
+  });
+
+  test('a Substitution still reverts after the Session is picked up from a draft', () => {
+    // The draft carries the snapshot, which holds the prescribed Movement's
+    // name and nothing else about it. The scheme and the binding come back from
+    // the Day regardless.
+    const app = loadAppWithProgram(PPL);
+    const m = boundLift(app);
+    startOn(app, m.day);
+    substituteWithScheme(app, m.cat, m.key, 'Hack Squat', { sets: 2, repLow: 20, repHigh: 25 });
+    app.saveDraft();
+
+    app.session = app.backfillSnapshot(app.loadDraft());
+    app.activeDay = app.session.dayType;
+    assert.ok(revertVia(app, m.cat, m.key), 'the resumed Session refused the revert');
+
+    const entry = app.entryFor(m.cat, m.key);
+    assert.equal(entry.name, m.item.name);
+    assert.equal(entry.setsStr, m.item.sets);
+    assert.equal(entry.baselineId, m.item.baselineId);
+  });
+});
+
+describe('scoring parity survives a revert', () => {
+  // The load-bearing property has to hold in both directions. A Movement
+  // substituted and then reverted must score exactly what the same work scores
+  // on a Session that never had a Substitution in it — so a revert that left
+  // the set count or the rep range behind shows up here as Score the lifter
+  // neither earned nor lost.
+  test('a substituted-then-reverted Session scores what the control scores', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+
+    // Control: prescribed throughout, nothing ever substituted.
+    const control = app.initSession(day.id);
+    Object.values(control.primaries).forEach(p => fillSets(p, 185, p.target.repLow));
+    Object.values(control.accessories).forEach(a => fillSets(a, 60, 12));
+    Object.values(control.ar7).forEach(a => { a.rounds = 5; });
+    control.feel = { energy: 4, effort: 4, recovery: 3 };
+    const expected = plain(app.computeScore(control));
+
+    // The same Day: every Movement substituted onto a moved scheme and logged
+    // against, then every one of them reverted and logged the control's work.
+    const s = startOn(app, day);
+    loggedMovements(app, day).forEach((m, i) => {
+      const entry = app.entryFor(m.cat, m.key);
+      const range = app.repRangeOf(entry, m.cat);
+      assert.ok(substituteWithScheme(app, m.cat, m.key, 'Substitute ' + i, {
+        sets: (entry.sets ? entry.sets.length : 1) + 1,
+        repLow: range.repLow + 7,
+        repHigh: range.repHigh + 7,
+      }), m.cat + ' ' + m.key + ' refused the scheme');
+      logSomething(m.cat, app.entryFor(m.cat, m.key));
+    });
+    loggedMovements(app, day).forEach(m =>
+      assert.ok(revertVia(app, m.cat, m.key), m.cat + ' ' + m.key + ' refused the revert'));
+
+    // Logged against what the control logged, not against what the reverted
+    // entry now says: a revert that put back the wrong rep range or the wrong
+    // set count then costs Score here.
+    loggedMovements(app, day).forEach(m => {
+      const entry = app.entryFor(m.cat, m.key);
+      if (m.cat === 'ar7') { entry.rounds = 5; return; }
+      if (m.cat === 'primary') fillSets(entry, 185, entryIn(control, m.cat, m.key).target.repLow);
+      else fillSets(entry, 60, 12);
+    });
+    s.feel = { energy: 4, effort: 4, recovery: 3 };
+
+    assert.deepEqual(plain(app.computeScore(s)), expected);
+  });
+});
 
 // ── TICKET 06: MARK A SUBSTITUTION PERMANENT ───────────────
 // Drives the substitution form with the permanent box ticked, the way a lifter

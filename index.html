@@ -648,6 +648,7 @@ body.session-active .bottomnav { display: none; }
     <label class="sub-permanent" for="subPermanentInput"><input id="subPermanentInput" type="checkbox"/><span>Make it permanent &mdash; stand in for this Movement in future Sessions of this Day too. Your Program is not edited.</span></label>
     <p class="modal-preview" id="subModalHint"></p>
     <button id="subSaveBtn" class="btn-save">Substitute</button>
+    <button id="subRevertBtn" class="btn-ghost">Revert to Prescribed</button>
   </div>
 </div>
 
@@ -2467,6 +2468,58 @@ function applyScheme(entry, cat, numSets, repLow, repHigh) {
   entry.setsStr = rewriteScheme(entry.setsStr, cat, numSets, repLow, repHigh);
   if (cat !== 'ar7') resizeSets(entry, numSets);
 }
+// The prescribed Movement behind a snapshot key, read back out of the Day the
+// Session was started from. `substitutedFor` carries the prescribed Movement's
+// name only, so a revert cannot restore the scheme or the baseline binding from
+// the snapshot alone — but the key encodes the position, so the Day still can.
+//
+// This is the ONE place a snapshot key is resolved to its prescribed Movement.
+// When the effective-Day resolver lands, the DAYS lookup below becomes the
+// resolved Day and nothing else changes: reverting a day-only Substitution made
+// on top of a Permanent Substitution has to give back the permanent substitute,
+// not the Program's original. Scattered across call sites, that lookup would
+// get it wrong quietly.
+function prescribedItemFor(cat, key) {
+  if (!session) return null;
+  const day = DAYS.find(d => d.id === session.dayType);
+  if (!day || !day.sections) return null;
+  const parts = String(key).split('-');
+  const sec = day.sections[parseInt(parts[0], 10)];
+  if (!sec || !sec.items || classifySection(sec) !== cat) return null;
+  return sec.items[parseInt(parts[1], 10)] || null;
+}
+// What reverting would cost: only the values logged against the substitute
+// count. A revert with nothing filled in throws nothing away and is not worth
+// asking about.
+function loggedValuesIn(entry) {
+  if (!entry) return 0;
+  let n = (entry.sets || []).filter(s => s && (s.weight || s.reps)).length;
+  if (entry.weight) n++;
+  if (entry.rounds) n++;
+  if (entry.rpe) n++;
+  return n;
+}
+// Puts the prescribed Movement back where the substitute stood: its name, its
+// scheme, and its baseline binding, so the working range drawn from the Lift's
+// 1RM reappears. The logged values go with the substitute, because carrying
+// them over would attribute them to the prescribed Movement and feed them to
+// the history-based suggested-weight lookup, which matches on Movement name.
+// What is left is the entry initSession would have built.
+function revertEntry(entry, item) {
+  entry.name = item.name;
+  entry.note = item.note || '';
+  entry.setsStr = item.sets || '';
+  entry.target = parseSetsStr(item.sets);
+  entry.baselineId = item.baselineId || null;
+  entry.substitutedFor = null;
+  if (entry.sets) {
+    entry.sets = [];
+    for (let i = 0; i < entry.target.numSets; i++) entry.sets.push({ weight: '', reps: '' });
+  }
+  if (entry.weight !== undefined) entry.weight = '';
+  if (entry.rounds !== undefined) entry.rounds = 0;
+  if (entry.rpe !== undefined) entry.rpe = 0;
+}
 function resumeSession(draftData) {
   session = backfillSnapshot(draftData);
   document.body.classList.add('session-active');
@@ -3006,6 +3059,8 @@ window.openSubstituteModal = function(cat, key) {
   // count to offer.
   document.getElementById('subSetsField').style.display = isAr7 ? 'none' : '';
   document.getElementById('subSchemeRow').classList.toggle('no-sets', isAr7);
+  // Only a Substitution has a prescribed Movement to go back to.
+  document.getElementById('subRevertBtn').style.display = entry.substitutedFor ? '' : 'none';
 
   // Day-only is the default: the common case is a machine that is busy right
   // now, and that must never silently change what the Day prescribes.
@@ -3070,6 +3125,29 @@ function saveSubstitution() {
     const prescribed = prescribedNameAt(session.dayType, substituting.key);
     if (prescribed) setOverride(session.dayType, prescribed, entry.name, entry.setsStr);
   }
+  closeSubstituteModal();
+  saveDraft(); render();
+}
+// A machine freeing up should not leave the lifter stuck with their workaround,
+// so a Substitution can go back to the prescribed Movement while the Session is
+// still active.
+function revertSubstitution() {
+  if (!substituting) return closeSubstituteModal();
+  const cat = substituting.cat, key = substituting.key;
+  const entry = entryFor(cat, key);
+  if (!entry || !entry.substitutedFor) return closeSubstituteModal();
+  const item = prescribedItemFor(cat, key);
+  // The Day no longer prescribes anything in this position, so there is nothing
+  // to go back to. Leave the Substitution standing rather than guess at one.
+  if (!item) { setSubHint('This Movement is no longer in the Day, so there is nothing to go back to.', true); return; }
+  // Reverting discards logged work, so say what it costs before doing it.
+  const logged = loggedValuesIn(entry);
+  if (logged > 0 && !confirm('Going back to ' + item.name + ' clears the ' +
+      (logged === 1 ? 'value' : logged + ' values') + ' you logged against ' + entry.name + '. Continue?')) {
+    setSubHint('Left as it was. Nothing was changed.');
+    return;
+  }
+  revertEntry(entry, item);
   closeSubstituteModal();
   saveDraft(); render();
 }
@@ -3572,6 +3650,7 @@ document.getElementById('modalCancelBtn').addEventListener('click', closeBaselin
 document.getElementById('modalResetBtn').addEventListener('click', resetBaseline);
 document.getElementById('baselineModal').addEventListener('click', e => { if(e.target===document.getElementById('baselineModal')) closeBaselineModal(); });
 document.getElementById('subSaveBtn').addEventListener('click', saveSubstitution);
+document.getElementById('subRevertBtn').addEventListener('click', revertSubstitution);
 document.getElementById('subCancelBtn').addEventListener('click', closeSubstituteModal);
 document.getElementById('substituteModal').addEventListener('click', e => { if(e.target===document.getElementById('substituteModal')) closeSubstituteModal(); });
 document.getElementById('subNameInput').addEventListener('keyup', e => { if(e.key==='Enter') saveSubstitution(); });
