@@ -2012,7 +2012,586 @@ describe('scoring parity survives a scheme edit', () => {
 // (ticket 05's tests go here)
 
 // ── TICKET 06: MARK A SUBSTITUTION PERMANENT ───────────────
-// (ticket 06's tests go here)
+// Drives the substitution form with the permanent box ticked, the way a lifter
+// does when a machine is gone rather than busy. Returns whether the form closed.
+function substitutePermanently(app, cat, key, name, scheme) {
+  app.openSubstituteModal(cat, key);
+  app.document.getElementById('subNameInput').value = name;
+  const fields = { sets: 'subSetsInput', repLow: 'subRepLowInput', repHigh: 'subRepHighInput' };
+  Object.keys(fields).forEach(f => {
+    if (scheme && scheme[f] !== undefined) app.document.getElementById(fields[f]).value = String(scheme[f]);
+  });
+  app.document.getElementById('subPermanentInput').checked = true;
+  app.saveSubstitution();
+  return !app.document.getElementById('substituteModal').classList.contains('open');
+}
+
+// Every Movement name a Day prescribes, in order, Sections included.
+function movementNames(day) {
+  const out = [];
+  (day.sections || []).forEach(sec => (sec.items || []).forEach(item => out.push(item.name)));
+  return out;
+}
+
+// The Movement a Day prescribes under a given name.
+function movementNamed(day, name) {
+  for (const sec of (day.sections || [])) {
+    for (const item of (sec.items || [])) if (item.name === name) return item;
+  }
+  return null;
+}
+
+// The first logged Movement of a Day in the given Section category.
+function firstLogged(app, day, cat) {
+  return loggedMovements(app, day).find(m => !cat || m.cat === cat);
+}
+
+// An override store holding one entry, built by hand so a resolver test states
+// its own input rather than going through the form.
+function storeWith(dayId, prescribedName, name, sets) {
+  const store = {};
+  store[dayId] = {};
+  store[dayId][prescribedName] = { name: name, sets: sets };
+  return store;
+}
+
+// An imported Program prescribing the same Movement on two Days. No bundled
+// Program repeats a Movement across two logged Sections, and keying by Day is
+// only observable where one does.
+function importTwoDayProgram(app) {
+  const legDay = (id, label) => ({
+    id: id, label: label, day: label, sub: 'Quads', accent: '#ffffff',
+    duration: '~60 min', notes: '', isOff: false,
+    sections: [{
+      title: 'Primary Strength', icon: 'fitness_center', type: 'primary', ar7: false,
+      items: [
+        { name: 'Hack Squat', sets: '3 × 8–10', note: 'quads', restSeconds: null },
+        { name: 'Leg Extension', sets: '3 × 12–15', note: '', restSeconds: null },
+      ],
+    }],
+  });
+  const program = {
+    id: 'prog-two-leg-days', name: 'Two Leg Days', importedAt: '2026-01-01T00:00:00Z',
+    locked: false, days: [legDay('legs-a', 'LEGS A'), legDay('legs-b', 'LEGS B')],
+    baselines: [], weekdayMap: null,
+  };
+  app.saveProgram(program);
+  app.initProgramState();
+  return program;
+}
+
+describe('marking a Substitution permanent', () => {
+  test('day-only is what the form offers until the lifter says otherwise', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+
+    app.openSubstituteModal(m.cat, m.key);
+    assert.equal(app.document.getElementById('subPermanentInput').checked, false,
+      'the form opens offering a Substitution for today only');
+
+    app.document.getElementById('subNameInput').value = 'Trap Bar Deadlift';
+    app.saveSubstitution();
+
+    assert.deepEqual(plain(app.loadOverrides()), {}, 'nothing was recorded for future Sessions');
+    assert.equal(app.initSession(day.id).primaries[m.key].name, m.name,
+      'the next Session prescribes what the Program prescribes');
+  });
+
+  test('a Substitution marked permanent is recorded against the prescribed Movement', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+
+    assert.ok(substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift', { sets: 4, repLow: 6, repHigh: 8 }),
+      'the form accepted it');
+
+    const stored = plain(JSON.parse(app.localStorage.getItem('apparatus_overrides')));
+    assert.deepEqual(Object.keys(stored), [app.currentProgramId()], 'keyed by Program id first');
+    assert.deepEqual(Object.keys(stored[app.currentProgramId()]), [day.id], 'then by Day id');
+    assert.deepEqual(stored[app.currentProgramId()][day.id][m.name],
+      { name: 'Trap Bar Deadlift', sets: '4 × 6–8' },
+      'then by the prescribed Movement name, carrying the substitute and its scheme');
+  });
+
+  test('the Substitution still applies to the Session it was made in', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const s = startOn(app, day);
+
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+
+    assert.equal(entryIn(s, m.cat, m.key).name, 'Trap Bar Deadlift');
+    assert.equal(entryIn(s, m.cat, m.key).substitutedFor, m.name);
+  });
+
+  test('a Movement in any logged Section can be made permanent', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    const seen = new Set();
+
+    ['primary', 'ar7', 'accessory'].forEach(cat => {
+      const m = firstLogged(app, day, cat);
+      startOn(app, day);
+      assert.ok(substitutePermanently(app, m.cat, m.key, cat + ' stand-in'), cat + ' was refused');
+      seen.add(cat);
+    });
+
+    assert.deepEqual([...seen].sort(), ['accessory', 'ar7', 'primary']);
+    assert.equal(Object.keys(plain(app.loadOverrides())[day.id]).length, 3,
+      'all three were recorded for the Day');
+  });
+});
+
+describe('a Permanent Substitution stands in at Session start', () => {
+  test('a new Session for that Day starts with the substitute and its stored scheme', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift', { sets: 4, repLow: 6, repHigh: 8 });
+
+    const next = app.initSession(day.id);
+    const entry = entryIn(next, m.cat, m.key);
+    assert.equal(entry.name, 'Trap Bar Deadlift', 'no re-entering it weekly');
+    assert.equal(entry.setsStr, '4 × 6–8', 'with the scheme it was stored with');
+    assert.deepEqual(plain(entry.target), { numSets: 4, repLow: 6, repHigh: 8 });
+    assert.equal(entry.sets.length, 4, 'four sets to log against');
+  });
+
+  test('a stored name with HTML in it is shown as typed, not interpreted', () => {
+    // An override's name is lifter-typed free text that now outlives the Session
+    // that typed it, so it comes back out of storage every week.
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, '<img src=x onerror=alert(1)> "quoted"');
+
+    startOn(app, day);
+    const html = renderActive(app, day);
+
+    assert.ok(!html.includes('<img src=x'), 'the markup is not live');
+    assert.ok(html.includes('&lt;img src=x'), 'it is shown as text');
+  });
+
+  test('an AR-7 substitute keeps the rep range it was stored with', () => {
+    // AR-7 writes its range into the scheme string, which parseSetsStr cannot
+    // read, so the stored scheme is the only place the range survives.
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['ar7']);
+    const m = firstLogged(app, day, 'ar7');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Sled Push', { repLow: 12, repHigh: 15 });
+
+    const entry = entryIn(app.initSession(day.id), m.cat, m.key);
+    assert.equal(entry.name, 'Sled Push');
+    assert.deepEqual(plain(app.repRangeOf(entry, 'ar7')), { repLow: 12, repHigh: 15 });
+  });
+
+  test('a Day with no Permanent Substitution starts exactly as it did before', () => {
+    const app = loadAppWithProgram(PPL);
+    const other = dayWithSections(app, ['primary']);
+    const legs = app.DAYS.find(d => !d.isOff && d.id !== other.id && d.sections);
+    const m = firstLogged(app, other, 'primary');
+    startOn(app, other);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+
+    // startTime comes off the clock, so it is not part of the comparison.
+    const snapshot = (a, id) => { const s = plain(a.initSession(id)); delete s.startTime; return s; };
+    const fresh = loadAppWithProgram(PPL);
+    assert.deepEqual(snapshot(app, legs.id), snapshot(fresh, legs.id),
+      'the untouched Day is snapshotted identically');
+  });
+
+  test('a resumed draft agrees with a fresh Session about what it prescribes', () => {
+    // A draft saved by an older build has gaps, and backfillSnapshot fills them
+    // from the Day. Filling them from the Program rather than the effective Day
+    // would make a resumed draft disagree with a fresh Session.
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift', { sets: 4, repLow: 6, repHigh: 8 });
+
+    // An older draft: logged work, but none of the fields the snapshot now carries.
+    const older = plain(app.initSession(day.id));
+    const stripped = entryIn(older, m.cat, m.key);
+    delete stripped.name; delete stripped.setsStr; delete stripped.target;
+    delete stripped.baselineId; delete stripped.substitutedFor; delete stripped.note;
+
+    const resumed = entryIn(app.backfillSnapshot(older), m.cat, m.key);
+    assert.equal(resumed.name, 'Trap Bar Deadlift', 'the resumed draft shows the substitute');
+    assert.equal(resumed.setsStr, '4 × 6–8');
+    assert.equal(resumed.baselineId, null);
+  });
+
+  test('the substitute does not inherit the prescribed Lift\'s Baseline binding', () => {
+    // A Baseline binding carried over would prescribe a barbell load for a
+    // dumbbell movement.
+    const app = loadAppWithProgram(PPL);
+    const bound = (() => {
+      for (const day of app.DAYS) {
+        if (day.isOff || !day.sections) continue;
+        for (let si = 0; si < day.sections.length; si++) {
+          if (app.classifySection(day.sections[si]) === 'skip') continue;
+          const ii = day.sections[si].items.findIndex(i => i.baselineId);
+          if (ii >= 0) return { day, cat: app.classifySection(day.sections[si]), key: si + '-' + ii, item: day.sections[si].items[ii] };
+        }
+      }
+      return null;
+    })();
+    assert.ok(bound, 'a Movement is bound to a Baseline');
+    app.saveBaselines(app.BASELINES.map(b => ({ id: b.id, orm: 300 })));
+    startOn(app, bound.day);
+    substitutePermanently(app, bound.cat, bound.key, 'Dumbbell Version');
+
+    const entry = entryIn(app.initSession(bound.day.id), bound.cat, bound.key);
+    assert.equal(entry.baselineId, null, 'the binding is dropped for good');
+    assert.equal(app.getSuggestedWeight(entry.name, entry.setsStr, entry.baselineId), null,
+      'no load is derived from a 1RM the substitute has nothing to do with');
+  });
+});
+
+describe('the effective-Day resolver', () => {
+  test('no overrides leaves every Day of every bundled Program unchanged', () => {
+    const app = loadApp();
+    let days = 0;
+    app.BUILT_IN_PROGRAMS.forEach(program => {
+      app.setProgram(app.clone(program));
+      app.DAYS.forEach(day => {
+        days++;
+        assert.deepEqual(plain(app.effectiveDay(day)), plain(day), program.id + '/' + day.id);
+      });
+    });
+    assert.ok(days > 0, 'Days were resolved');
+  });
+
+  test('one override is applied, and nothing else on the Day moves', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const before = movementNames(day);
+
+    const eff = app.effectiveDay(day, storeWith(day.id, m.name, 'Trap Bar Deadlift', '4 × 6'));
+
+    assert.deepEqual(movementNames(eff), before.map(n => n === m.name ? 'Trap Bar Deadlift' : n));
+    const item = movementNamed(eff, 'Trap Bar Deadlift');
+    assert.equal(item.sets, '4 × 6', 'with the stored scheme');
+    assert.equal(item.substitutedFor, m.name, 'labelled with what it replaced');
+  });
+
+  test('several overrides in one Day are all applied', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    const movements = loggedMovements(app, day);
+    const store = {}; store[day.id] = {};
+    movements.forEach((m, i) => { store[day.id][m.name] = { name: 'Stand-In ' + i, sets: '2 × 9' }; });
+
+    const eff = app.effectiveDay(day, store);
+
+    movements.forEach((m, i) => {
+      assert.ok(movementNamed(eff, 'Stand-In ' + i), 'Stand-In ' + i + ' is prescribed');
+      assert.equal(movementNamed(eff, 'Stand-In ' + i).substitutedFor, m.name);
+    });
+    assert.equal(movementNames(eff).filter(n => n.startsWith('Stand-In ')).length, movements.length);
+  });
+
+  test('an override for a Movement the Day no longer prescribes is ignored, not reassigned', () => {
+    // Editing or re-importing a Program must not land an override on the wrong
+    // Movement, which is the failure mode a positional key would have.
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+
+    const eff = app.effectiveDay(day, storeWith(day.id, 'A Movement No Longer Here', 'Ghost Press', '3 × 5'));
+
+    assert.deepEqual(movementNames(eff), movementNames(day), 'the Day prescribes what it prescribed');
+    assert.equal(movementNamed(eff, 'Ghost Press'), null, 'the override went inert');
+  });
+
+  test('an override for another Day does not reach this one', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+
+    const eff = app.effectiveDay(day, storeWith('some-other-day', m.name, 'Trap Bar Deadlift', '4 × 6'));
+
+    assert.deepEqual(movementNames(eff), movementNames(day));
+  });
+
+  test('resolving a Day never writes to the Program', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const programBefore = plain(app.DAYS);
+    const builtInsBefore = plain(app.BUILT_IN_PROGRAMS);
+
+    app.effectiveDay(day, storeWith(day.id, m.name, 'Trap Bar Deadlift', '4 × 6'));
+
+    assert.deepEqual(plain(app.DAYS), programBefore, 'the Program definition is untouched');
+    assert.deepEqual(plain(app.BUILT_IN_PROGRAMS), builtInsBefore, 'so are the embedded built-ins');
+  });
+
+  test('a corrupt or absent store reads as no overrides rather than throwing', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+
+    assert.deepEqual(plain(app.loadOverrides()), {}, 'nothing stored');
+    app.localStorage.setItem('apparatus_overrides', '{ not json at all');
+    assert.deepEqual(plain(app.loadOverrides()), {}, 'unparseable');
+    assert.deepEqual(plain(app.effectiveDay(day)), plain(day));
+    app.localStorage.setItem('apparatus_overrides', '["wrong shape"]');
+    assert.deepEqual(plain(app.loadOverrides()), {}, 'parseable but not a map');
+    assert.deepEqual(plain(app.effectiveDay(day)), plain(day));
+  });
+
+  test('a Permanent Substitution recorded over a corrupt store still takes effect', () => {
+    // Degrading to "no overrides" has to leave the lifter able to record one,
+    // rather than quietly dropping every Substitution they mark from then on.
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    app.localStorage.setItem('apparatus_overrides', '{ not json at all');
+
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+
+    assert.equal(app.initSession(day.id).primaries[m.key].name, 'Trap Bar Deadlift',
+      'the corrupt store was replaced with a readable one');
+  });
+});
+
+describe('Permanent Substitutions are kept per Program and per Day', () => {
+  test('a Movement on two Days is overridden only on the Day it was substituted on', () => {
+    const app = loadApp();
+    importTwoDayProgram(app);
+    const [dayA, dayB] = app.DAYS;
+    startOn(app, dayA);
+    assert.ok(substitutePermanently(app, 'primary', '0-0', 'Belt Squat'));
+
+    assert.equal(app.initSession(dayA.id).primaries['0-0'].name, 'Belt Squat',
+      'the Day it was substituted on');
+    assert.equal(app.initSession(dayB.id).primaries['0-0'].name, 'Hack Squat',
+      'the other Day still prescribes what the Program prescribes');
+  });
+
+  test('a Substitution on an imported Program behaves as it does on a built-in one', () => {
+    const app = loadApp();
+    const imported = importTwoDayProgram(app);
+    const day = app.DAYS[0];
+    startOn(app, day);
+    substitutePermanently(app, 'primary', '0-0', 'Belt Squat', { sets: 5, repLow: 5, repHigh: 5 });
+
+    const entry = app.initSession(day.id).primaries['0-0'];
+    assert.equal(entry.name, 'Belt Squat');
+    assert.equal(entry.setsStr, '5 × 5');
+    assert.deepEqual(Object.keys(plain(app.readOverrideMap())), [imported.id],
+      'recorded under the imported Program');
+  });
+
+  test('are kept separately per Program', () => {
+    const app = loadApp();
+    const [first, second] = app.BUILT_IN_PROGRAMS;
+    if (!second) return; // only one built-in bundled
+
+    app.setProgram(app.clone(first));
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+
+    app.setProgram(app.clone(second));
+    assert.deepEqual(plain(app.loadOverrides()), {}, 'the other Program sees none of it');
+
+    app.setProgram(app.clone(first));
+    assert.equal(plain(app.loadOverrides())[day.id][m.name].name, 'Trap Bar Deadlift',
+      'the first Program kept its own');
+  });
+
+  test('survive switching away from a Program and back', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const programId = app.currentProgramId();
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+
+    app.setProgram(null);
+    app.setProgram(app.clone(app.builtInById(programId)));
+
+    assert.equal(app.initSession(day.id).primaries[m.key].name, 'Trap Bar Deadlift',
+      'the way 1RM Baselines already behave');
+  });
+
+  test('Restore Built-In Program drops the imported Program and leaves overrides alone', () => {
+    const app = loadApp();
+    const imported = importTwoDayProgram(app);
+    const day = app.DAYS[0];
+    startOn(app, day);
+    substitutePermanently(app, 'primary', '0-0', 'Belt Squat');
+    const storeBefore = plain(app.readOverrideMap());
+
+    app.session = null;
+    app.clearProgram();
+
+    assert.equal(app.loadStoredProgram(), null, 'the imported Program is gone');
+    assert.notEqual(app.currentProgramId(), imported.id, 'a built-in is active again');
+    assert.deepEqual(plain(app.readOverrideMap()), storeBefore,
+      'dropping an import discards nothing else the lifter decided');
+
+    app.saveProgram(imported);
+    app.initProgramState();
+    assert.equal(app.initSession(day.id).primaries['0-0'].name, 'Belt Squat',
+      're-importing the Program brings the Permanent Substitution back');
+  });
+});
+
+describe('a day-only Substitution on top of a Permanent Substitution', () => {
+  test('records the permanent substitute as what it replaced and leaves the store intact', () => {
+    const app = loadApp();
+    importTwoDayProgram(app);
+    const day = app.DAYS[0];
+    startOn(app, day);
+    substitutePermanently(app, 'primary', '0-0', 'Belt Squat');
+    const storeBefore = plain(app.readOverrideMap());
+
+    // A new Session, where the Belt Squat is the machine that is busy today.
+    const s = startOn(app, day);
+    assert.equal(entryIn(s, 'primary', '0-0').name, 'Belt Squat');
+    assert.equal(entryIn(s, 'primary', '0-0').substitutedFor, null,
+      'the permanent substitute is what this Day prescribes now, not a Substitution of it');
+
+    assert.ok(substituteVia(app, 'primary', '0-0', 'Goblet Squat'));
+
+    assert.equal(entryIn(s, 'primary', '0-0').name, 'Goblet Squat');
+    assert.equal(entryIn(s, 'primary', '0-0').substitutedFor, 'Belt Squat',
+      'what the lifter was looking at is what it replaced');
+    assert.deepEqual(plain(app.readOverrideMap()), storeBefore,
+      'one bad day does not undo a settled decision');
+    assert.equal(app.initSession(day.id).primaries['0-0'].name, 'Belt Squat',
+      'the next Session is back to the Permanent Substitution');
+  });
+
+  test('a second permanent Substitution replaces the first for that Day', () => {
+    const app = loadApp();
+    importTwoDayProgram(app);
+    const day = app.DAYS[0];
+    startOn(app, day);
+    substitutePermanently(app, 'primary', '0-0', 'Belt Squat');
+    startOn(app, day);
+    substitutePermanently(app, 'primary', '0-0', 'Leg Press');
+
+    const forDay = plain(app.loadOverrides())[day.id];
+    assert.deepEqual(Object.keys(forDay), ['Hack Squat'],
+      'still one override, keyed by what the Program prescribes');
+    assert.equal(forDay['Hack Squat'].name, 'Leg Press');
+    assert.equal(app.initSession(day.id).primaries['0-0'].name, 'Leg Press');
+  });
+});
+
+describe('a Baseline whose Lift was permanently substituted away', () => {
+  test('stays on the Strength page, unmarked', () => {
+    const app = loadAppWithProgram(PPL);
+    const bound = (() => {
+      for (const day of app.DAYS) {
+        if (day.isOff || !day.sections) continue;
+        for (let si = 0; si < day.sections.length; si++) {
+          if (app.classifySection(day.sections[si]) === 'skip') continue;
+          const ii = day.sections[si].items.findIndex(i => i.baselineId);
+          if (ii >= 0) return { day, cat: app.classifySection(day.sections[si]), key: si + '-' + ii, item: day.sections[si].items[ii] };
+        }
+      }
+      return null;
+    })();
+    assert.ok(bound);
+    const baseline = app.loadBaselines().find(b => b.id === bound.item.baselineId);
+    const before = plain(app.loadBaselines());
+
+    startOn(app, bound.day);
+    substitutePermanently(app, bound.cat, bound.key, 'Dumbbell Version');
+    app.session = null;
+
+    assert.deepEqual(plain(app.loadBaselines()), before, 'a max the lifter still cares about');
+    app.renderBaselines();
+    const html = app.document.getElementById('baselinesSection').innerHTML;
+    assert.ok(html.includes(baseline.lift), 'still listed');
+    assert.ok(!html.includes('Substituted'), 'and not marked as one');
+  });
+});
+
+describe('nothing a Permanent Substitution does reaches the Program', () => {
+  test('the Program definition and the embedded built-in programs are unchanged', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const programBefore = plain(app.PROGRAM);
+    const builtInsBefore = plain(app.BUILT_IN_PROGRAMS);
+
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift', { sets: 4, repLow: 6, repHigh: 8 });
+    app.initSession(day.id);
+
+    assert.deepEqual(plain(app.PROGRAM), programBefore);
+    assert.deepEqual(plain(app.BUILT_IN_PROGRAMS), builtInsBefore);
+    assert.equal(app.loadStoredProgram(), null, 'and nothing was written into stored Program state');
+  });
+
+  test('the CSV a Program is imported from still builds the same Program', () => {
+    const app = loadAppWithProgram(PPL);
+    // id and importedAt are stamped from the clock, so they are not compared.
+    const fromTemplate = () => {
+      const built = plain(app.buildProgramFromCSV(app.parseCSV(app.generateCSVTemplate()), 'T'));
+      delete built.id; delete built.importedAt; return built;
+    };
+    const before = fromTemplate();
+
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+
+    assert.deepEqual(fromTemplate(), before, 'the CSV format is untouched');
+  });
+});
+
+describe('scoring parity survives a Permanent Substitution', () => {
+  // Mirrors the control in 'scoring parity: the load-bearing property': the
+  // same logged numbers, whatever the Movements are called.
+  function logWork(app, s) {
+    Object.values(s.primaries).forEach((p, i) => p.sets.forEach((set, j) => {
+      set.weight = String(135 + i * 10 + j * 5);
+      set.reps = String(p.target.repLow + (j % 2));
+    }));
+    Object.values(s.ar7).forEach((a, i) => { a.rounds = 4 + (i % 3); a.weight = String(40 + i * 5); });
+    Object.values(s.accessories).forEach((a, i) => {
+      if (i % 2) a.rpe = 3 + (i % 3);
+      else a.sets.forEach((set, j) => { if (j < 2) { set.weight = '70'; set.reps = '12'; } });
+    });
+    s.feel = { energy: 4, effort: 4, recovery: 3 };
+    return s;
+  }
+
+  test('a Session on a Day carrying Permanent Substitutions scores what the control scores', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    const expected = plain(app.computeScore(logWork(app, app.initSession(day.id))));
+
+    startOn(app, day);
+    loggedMovements(app, day).forEach((m, i) => substitutePermanently(app, m.cat, m.key, 'Permanent ' + i));
+
+    // A Session started afterwards: the Substitutions are already in place.
+    const s = startOn(app, day);
+    assert.ok(Object.values(s.primaries).every(p => p.name.startsWith('Permanent ')),
+      'the Session started with the substitutes');
+    logWork(app, s);
+
+    assert.deepEqual(plain(app.computeScore(s)), expected,
+      'a Score measures training, not what the gym still owns');
+  });
+});
 
 // ── TICKET 09: SUBSTITUTIONS IN HISTORY ────────────────────
 // Renders the Summary of a stored Session and hands back what the lifter reads.

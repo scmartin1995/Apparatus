@@ -174,6 +174,9 @@ const EXPORTS = [
   'renderHistoryPage', 'renderSparkline', 'checkDeloadNudge',
   'updateSessionPrimary', 'updateSessionAr7Weight', 'updateSessionAr7Rounds',
   'updateSessionAccessory', 'updateSessionRpe',
+  'readOverrideMap', 'loadOverrides', 'saveOverrides', 'setOverride',
+  'prescribedNameAt', 'effectiveDay',
+  'generateCSVTemplate', 'renderBaselines',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];
