@@ -2007,3 +2007,12 @@ describe('scoring parity survives a scheme edit', () => {
     assert.deepEqual(plain(app.computeScore(s)), expected);
   });
 });
+
+// ── TICKET 05: REVERT A SUBSTITUTION MID-SESSION ───────────
+// (ticket 05's tests go here)
+
+// ── TICKET 06: MARK A SUBSTITUTION PERMANENT ───────────────
+// (ticket 06's tests go here)
+
+// ── TICKET 09: SUBSTITUTIONS IN HISTORY ────────────────────
+// (ticket 09's tests go here)
