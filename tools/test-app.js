@@ -3392,4 +3392,274 @@ describe('a Session recorded before Substitutions existed', () => {
 // (ticket 07's tests go here)
 
 // ── TICKET 08: END-OF-SESSION PROMOTION PROMPT ─────────────
-// (ticket 08's tests go here)
+
+// The words the prompt opens and closes with, as the lifter reads them. Tests
+// assert on these rather than on markup, and they are also what tells the
+// prompt apart from the Substitutions block above it — which names a substitute
+// too, and would otherwise show through every assertion.
+const PROMPT_TITLE = 'Keep these swaps?';
+const PROMPT_DISMISS = 'Today only';
+
+// What the prompt itself says, cut out of the Summary. The Edit Log is taken
+// out first, because it names substitutes as well; the slice then narrows to
+// the prompt's own run of the Summary, so neither the Substitutions block nor
+// the Feel survey can make a failing assertion pass.
+function promptText(html) {
+  const start = html.indexOf(PROMPT_TITLE);
+  if (start < 0) return '';
+  const end = html.indexOf(PROMPT_DISMISS, start);
+  return end < 0 ? html.slice(start) : html.slice(start, end);
+}
+function promptOn(app, record) {
+  return promptText(summaryWithoutEditLog(app, record));
+}
+
+// The Movement the prompt offers to keep, and what it says it stands in for.
+function promptRow(app, record, name) {
+  const text = promptOn(app, record);
+  const at = text.indexOf('>' + name + '<');
+  return at < 0 ? '' : text.slice(at);
+}
+
+// Logs every Movement of the active Session and files it without rating the
+// Session Feel, the way a lifter who closes the Summary before answering
+// leaves it. The Feel survey is then still on the Summary, which is the point.
+function logAndFinishUnrated(app) {
+  const s = app.session;
+  Object.values(s.primaries).forEach(p => fillSets(p, 200, p.target.repLow));
+  Object.values(s.accessories).forEach(a => { fillSets(a, 50, a.target.repLow); a.rpe = 3; });
+  Object.values(s.ar7).forEach(a => { a.weight = '40'; a.rounds = 7; });
+  app.finishSession();
+  const all = app.getAllSessions();
+  return all[all.length - 1];
+}
+
+// The app as it comes back after a reload: a fresh instance carrying nothing
+// but what the previous one left in localStorage.
+function reopenApp(app) {
+  const saved = [];
+  for (let i = 0; i < app.localStorage.length; i++) {
+    const k = app.localStorage.key(i);
+    saved.push([k, app.localStorage.getItem(k)]);
+  }
+  const next = loadApp();
+  saved.forEach(([k, v]) => next.localStorage.setItem(k, v));
+  next.initProgramState();
+  return next;
+}
+
+// A finished Session on the first Day with both a primary and an accessory
+// Section, with the chosen Movements substituted day-only and nothing decided.
+function sessionWithSubstitutions(app, swaps) {
+  const day = dayWithSections(app, ['primary', 'accessory']);
+  startOn(app, day);
+  const made = swaps.map(([cat, name]) => {
+    const m = firstLogged(app, day, cat);
+    assert.ok(substituteVia(app, m.cat, m.key, name), 'the form accepted ' + name);
+    return Object.assign({}, m, { to: name });
+  });
+  return { day, made, record: logAndFinish(app) };
+}
+
+describe('the End-of-Session promotion prompt', () => {
+  test('a Substitution the lifter never decided is asked about on the Summary', () => {
+    const app = loadAppWithProgram(PPL);
+    const { made, record } = sessionWithSubstitutions(app, [['primary', 'Trap Bar Deadlift']]);
+
+    const text = promptOn(app, record);
+    assert.ok(text.includes(PROMPT_TITLE), 'the Summary asks about it');
+    assert.ok(text.includes('Trap Bar Deadlift'), 'the prompt names what was done instead');
+    assert.ok(promptRow(app, record, 'Trap Bar Deadlift').includes(made[0].name),
+      'and the Movement it stood in for');
+    assert.ok(summaryWithoutEditLog(app, record).includes(PROMPT_DISMISS),
+      'with one way to leave the rest as one-offs');
+  });
+
+  test('a Session with no Substitutions is asked nothing', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    startOn(app, day);
+    const record = logAndFinish(app);
+
+    assert.deepEqual(plain(app.undecidedSubstitutions(record)), [], 'nothing was substituted');
+    assert.equal(promptOn(app, record), '', 'so the Summary says nothing about keeping anything');
+    assert.ok(!summaryWithoutEditLog(app, record).includes(PROMPT_DISMISS),
+      'and offers nothing to dismiss');
+  });
+
+  test('a Substitution marked permanent during the Session is not asked about again', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    assert.ok(substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift', { sets: 4, repLow: 6, repHigh: 8 }),
+      'the form accepted it');
+    const record = logAndFinish(app);
+
+    assert.equal(promptOn(app, record), '',
+      'the lifter already decided, so the Summary does not ask');
+  });
+
+  test('one row per undecided Substitution, each decidable on its own', () => {
+    const app = loadAppWithProgram(PPL);
+    const { made, record } = sessionWithSubstitutions(app, [
+      ['primary', 'Trap Bar Deadlift'],
+      ['accessory', 'Cable Fly'],
+    ]);
+
+    const before = promptOn(app, record);
+    assert.ok(before.includes('Trap Bar Deadlift') && before.includes('Cable Fly'),
+      'both are asked about');
+
+    app.promoteSubstitution(record.id, made[0].key);
+
+    const after = promptOn(app, record);
+    assert.ok(!after.includes('Trap Bar Deadlift'), 'the one that was kept is no longer asked about');
+    assert.ok(after.includes('Cable Fly'), 'the other is still an open question');
+    assert.deepEqual(Object.keys(plain(app.loadOverrides())[record.dayType]), [made[0].name],
+      'and only the one that was kept is permanent');
+  });
+
+  test('a single dismiss records every remaining Substitution as day-only', () => {
+    const app = loadAppWithProgram(PPL);
+    app.answerConfirm(false);
+    const { day, made, record } = sessionWithSubstitutions(app, [
+      ['primary', 'Trap Bar Deadlift'],
+      ['accessory', 'Cable Fly'],
+    ]);
+    const asked = app.confirmsAsked().length;
+
+    app.dismissPromotionPrompt(record.id);
+
+    assert.deepEqual(plain(app.loadOverrides()), {}, 'nothing was made permanent');
+    assert.equal(promptOn(app, record), '', 'and the question is answered for every row');
+    const next = app.initSession(day.id);
+    made.forEach(m => assert.equal(entryIn(next, m.cat, m.key).name, m.name,
+      'the next Session prescribes what the Program prescribes'));
+    assert.equal(app.confirmsAsked().length, asked, 'deciding on the Summary asks nothing');
+  });
+
+  test('the prompt survives saving the Session Feel ratings', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    assert.ok(substituteVia(app, m.cat, m.key, 'Trap Bar Deadlift'), 'the form accepted it');
+    const record = logAndFinishUnrated(app);
+    assert.ok(summaryWithoutEditLog(app, record).includes('Session Feel'),
+      'the Feel survey is the other unanswered question');
+
+    app.updateFeel(record.id, 'energy', 4);
+    app.updateFeel(record.id, 'effort', 4);
+    app.updateFeel(record.id, 'recovery', 4);
+    app.saveFeelDraft(record.id);
+
+    // saveFeelDraft re-renders the Summary itself, so this is the markup the
+    // lifter is left looking at rather than one this test asked for.
+    const shown = promptText(app.document.getElementById('summaryBody').innerHTML);
+    assert.ok(shown.includes('Trap Bar Deadlift'),
+      'answering one question does not destroy the other');
+    const rated = app.getAllSessions().find(s => s.id === record.id);
+    assert.ok(rated.feel, 'the Feel was saved');
+    assert.deepEqual(plain(app.loadOverrides()), {},
+      'and saving it decided nothing about the Substitution');
+    assert.equal(plain(app.undecidedSubstitutions(rated)).length, 1,
+      'which is still an open question');
+  });
+
+  test('once answered the prompt does not come back, including after a reload', () => {
+    const app = loadAppWithProgram(PPL);
+    const { record } = sessionWithSubstitutions(app, [['primary', 'Trap Bar Deadlift']]);
+    app.dismissPromotionPrompt(record.id);
+
+    const reopened = reopenApp(app);
+    const fromHistory = reopened.getAllSessions().find(s => s.id === record.id);
+    assert.ok(fromHistory, 'the Session is still in history');
+    assert.ok(summaryWithoutEditLog(reopened, fromHistory).includes('Trap Bar Deadlift'),
+      'which still says what was done that day');
+    assert.equal(promptOn(reopened, fromHistory), '',
+      'but an answered question does not nag the lifter again');
+  });
+
+  test('a kept Substitution stays kept when the Session is reopened from history', () => {
+    const app = loadAppWithProgram(PPL);
+    const { made, record } = sessionWithSubstitutions(app, [['primary', 'Trap Bar Deadlift']]);
+    app.promoteSubstitution(record.id, made[0].key);
+
+    const reopened = reopenApp(app);
+    const fromHistory = reopened.getAllSessions().find(s => s.id === record.id);
+    assert.equal(promptOn(reopened, fromHistory), '', 'the Summary asks nothing further');
+    assert.equal(reopened.initSession(record.dayType).primaries[made[0].key].name, 'Trap Bar Deadlift',
+      'and the next Session starts with the substitute in place');
+  });
+
+  test('keeping a Substitution writes the scheme the Session ended with', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const prescribed = movementNamed(day, m.name).sets;
+    startOn(app, day);
+    assert.ok(substituteWithScheme(app, m.cat, m.key, 'Trap Bar Deadlift', { sets: 4, repLow: 6, repHigh: 8 }),
+      'the form accepted the scheme');
+    const record = logAndFinish(app);
+
+    app.promoteSubstitution(record.id, m.key);
+
+    const stored = plain(app.loadOverrides())[day.id][m.name];
+    assert.deepEqual(stored, { name: 'Trap Bar Deadlift', sets: '4 × 6–8' },
+      'the scheme the Session ended with, not the one the Program prescribes');
+    assert.notEqual(stored.sets, prescribed, 'which is a different scheme');
+    assert.equal(app.initSession(day.id).primaries[m.key].setsStr, '4 × 6–8',
+      'so the lifter does not re-enter it next week');
+  });
+
+  test('keeping a Substitution files it under the Movement the Program prescribes', () => {
+    const app = loadApp();
+    importTwoDayProgram(app);
+    const day = app.DAYS.find(d => d.id === 'legs-a');
+    app.setOverride(day.id, 'Hack Squat', 'Pendulum Squat', '3 × 8–10');
+    startOn(app, day);
+    const key = '0-0';
+    assert.equal(app.session.primaries[key].name, 'Pendulum Squat',
+      'the Session starts with the Permanent Substitution in place');
+    assert.ok(substituteVia(app, 'primary', key, 'Belt Squat'), 'the form accepted a swap on top of it');
+    const record = logAndFinish(app);
+    assert.equal(record.primaries[key].substitutedFor, 'Pendulum Squat',
+      'what was replaced today is the permanent substitute, not the Program Movement');
+
+    app.promoteSubstitution(record.id, key);
+
+    const stored = plain(app.loadOverrides())[day.id];
+    assert.deepEqual(Object.keys(stored), ['Hack Squat'],
+      'the override replaces the one filed under the prescribed Movement');
+    assert.deepEqual(stored['Hack Squat'], { name: 'Belt Squat', sets: '3 × 8–10' });
+    assert.equal(app.initSession(day.id).primaries[key].name, 'Belt Squat',
+      'so the next Session of that Day actually starts with it');
+    assert.equal(app.initSession('legs-b').primaries[key].name, 'Hack Squat',
+      'and the other Day is left alone');
+  });
+
+  test('keeping a Substitution does not touch the completed Session record', () => {
+    const app = loadAppWithProgram(PPL);
+    const { made, record } = sessionWithSubstitutions(app, [
+      ['primary', 'Trap Bar Deadlift'],
+      ['accessory', 'Cable Fly'],
+    ]);
+    const before = plain(app.getAllSessions());
+
+    app.promoteSubstitution(record.id, made[0].key);
+    app.dismissPromotionPrompt(record.id);
+
+    assert.deepEqual(plain(app.getAllSessions()), before,
+      'history keeps saying exactly what happened that day');
+  });
+
+  test('a substitute name typed with markup in it is shown as text', () => {
+    const app = loadAppWithProgram(PPL);
+    const { record } = sessionWithSubstitutions(app, [['primary', 'Dip <b>"wide"</b>']]);
+
+    const text = promptOn(app, record);
+    assert.ok(text.includes('Dip &lt;b&gt;&quot;wide&quot;&lt;/b&gt;'), 'the name is escaped');
+    assert.ok(!text.includes('<b>'), 'the markup the lifter typed is not markup');
+  });
+});

@@ -341,6 +341,16 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .summary-sub-name { font-family: var(--font-h); font-weight: 700; font-size: 0.8125rem; color: var(--c-on-surface); }
 .summary-sub-replaced { font-family: var(--font-b); font-size: 0.6875rem; color: var(--c-on-surface-v); }
 .summary-sub-replaced strong { color: var(--c-on-surface); font-weight: 600; }
+.summary-promote { background: var(--c-surface-low); border-radius: 14px; padding: 18px; margin-top: 14px; }
+.summary-promote-title { font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-primary-ctr); margin-bottom: 4px; }
+.summary-promote-sub { font-family: var(--font-b); font-size: 0.75rem; color: var(--c-on-surface-v); line-height: 1.5; margin-bottom: 16px; }
+.summary-promote-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid rgba(72,72,71,0.2); }
+.summary-promote-what { flex: 1; min-width: 0; }
+.summary-promote-name { font-family: var(--font-h); font-weight: 700; font-size: 0.8125rem; color: var(--c-on-surface); }
+.summary-promote-instead { font-family: var(--font-b); font-size: 0.6875rem; color: var(--c-on-surface-v); margin-top: 2px; }
+.summary-promote-instead strong { color: var(--c-on-surface); font-weight: 600; }
+.summary-promote-keep { flex-shrink: 0; min-height: 40px; padding: 0 16px; border-radius: 10px; background: rgba(202,253,0,0.12); border: 1px solid var(--c-primary-ctr); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; color: var(--c-primary-ctr); cursor: pointer; }
+.summary-promote-dismiss { width: 100%; min-height: 40px; margin-top: 14px; border-radius: 10px; background: var(--c-surface-ctr); border: 1px solid rgba(72,72,71,0.25); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--c-on-surface-v); cursor: pointer; }
 .edit-log-group-sub { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
 .edit-log-group-sub strong { color: var(--c-on-surface); font-weight: 600; }
 .session-row-sub { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-h); font-weight: 700; font-size: 0.5625rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-secondary); }
@@ -2708,6 +2718,10 @@ function renderSummary(record) {
     // here reads or changes the Score.
     renderSummarySubs(record) +
     // ── end of the Substitutions block ──
+    // ── The End-of-Session promotion prompt ── gated on its own, not on the
+    // Feel survey below: the survey vanishes for good once feel is saved, and
+    // one tap answering it must not decide every Substitution by default.
+    renderPromotionPrompt(record) +
     '<button id="editLogToggle" class="edit-log-toggle" onclick="toggleEditLog(\'' + record.id + '\')">' +
     '<span class="mi mi-sm" style="font-variation-settings:FILL 0,wght 400,GRAD 0,opsz 24">edit</span>Edit Log</button>' +
     '<div id="editLogSection" class="edit-log-section" style="display:none">' + renderEditLog(record) + '</div>' +
@@ -2741,6 +2755,139 @@ function renderSummarySubs(record) {
       '<span class="summary-sub-replaced">replaces <strong>' + escHtml(s.replaced) + '</strong></span></div>').join('') +
     '</div>';
 }
+// ── END-OF-SESSION PROMOTION PROMPT ────────────────────────
+// A lifter who swapped a Movement mid-Session often does not yet know whether
+// the swap is a keeper, so the Summary asks once the work is done and they can
+// judge how the alternative actually went. Only Substitutions the lifter never
+// decided are asked about, and only until they answer.
+//
+// Where "decided" is recorded, and why it is not on the Session record: the
+// record is history, a statement of what happened that day, and promoting must
+// leave it alone. A decision is about what the Program should prescribe next
+// week instead, so it lives in its own persisted key beside the override store,
+// filed by Session record id. Persisted rather than held in memory because the
+// Summary is reopened from history long after a reload, and an undecided
+// Substitution must not nag the lifter every time they look.
+//
+// The key is declared here rather than up in STORAGE KEYS so this block stays
+// one self-contained region while neighbouring work lands.
+const LS_SUB_DECISIONS = 'apparatus_sub_decisions';
+
+// { [recordId]: { [snapshot key]: 'permanent' | 'day-only' } }
+function readDecisionMap() {
+  try {
+    const stored = localStorage.getItem(LS_SUB_DECISIONS);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+  } catch(e) { return {}; }
+}
+// What the lifter has already decided about one Session's Substitutions.
+function decisionsFor(recordId) {
+  const mine = readDecisionMap()[recordId];
+  return (mine && typeof mine === 'object' && !Array.isArray(mine)) ? mine : {};
+}
+function saveDecisions(recordId, decisions) {
+  try {
+    const map = readDecisionMap();
+    map[recordId] = decisions;
+    // The Session store is capped, so decisions filed against records that have
+    // aged out are dead weight. Keep only the ones history can still show.
+    const live = {};
+    getAllSessions().forEach(s => { if (map[s.id]) live[s.id] = map[s.id]; });
+    localStorage.setItem(LS_SUB_DECISIONS, JSON.stringify(live));
+  } catch(e) {}
+}
+function markDecided(recordId, key, decision) {
+  const decisions = decisionsFor(recordId);
+  decisions[key] = decision;
+  saveDecisions(recordId, decisions);
+}
+
+// The Substitutions in a Session record that are still open questions, each
+// with the Movement the Program prescribes where it was made and the scheme
+// the Session ended with.
+function undecidedSubstitutions(record) {
+  if (!record) return [];
+  const decided = decisionsFor(record.id);
+  const dayOverrides = loadOverrides()[record.dayType] || {};
+  const out = [];
+  ['primaries', 'ar7', 'accessories'].forEach(group => {
+    const entries = record[group] || {};
+    Object.keys(entries).forEach(key => {
+      const entry = entries[key];
+      if (!entry || !entry.substitutedFor) return;
+      // Answered already, on this Summary or an earlier visit to it.
+      if (decided[key]) return;
+      // An override is keyed by what the Program prescribes at this position,
+      // never by what the lifter was looking at: a day-only Substitution made
+      // on top of a Permanent Substitution records the permanent substitute as
+      // its substitutedFor, so that name would file the override under the
+      // wrong key and it would silently never apply.
+      const prescribed = prescribedNameAt(record.dayType, key);
+      // The Day no longer prescribes anything here, so there is nothing to
+      // promote against. Nothing to ask either.
+      if (!prescribed) return;
+      // Already permanent for this Day, which is the lifter having decided
+      // during the Session by ticking the box on the form.
+      const standing = dayOverrides[prescribed];
+      if (standing && standing.name === entry.name) return;
+      // replaced is what the lifter swapped out today and so what the row
+      // names; prescribed is what the override is filed under. On a Day
+      // carrying a Permanent Substitution the two differ.
+      out.push({ key: key, name: entry.name || '', replaced: entry.substitutedFor,
+                 prescribed: prescribed, sets: entry.setsStr || '' });
+    });
+  });
+  return out;
+}
+
+// One row per undecided Substitution, each with its own keep action, so a
+// permanently gone machine and a temporarily busy one can be answered
+// differently. The single dismiss answers the rest as day-only. Substitute
+// names and an imported Program's Day label are lifter-typed, so both are
+// escaped before they reach innerHTML.
+function renderPromotionPrompt(record) {
+  const rows = undecidedSubstitutions(record);
+  if (!rows.length) return '';
+  const day = DAYS.find(d => d.id === record.dayType);
+  const label = day && day.label ? day.label : String(record.dayType || '').toUpperCase();
+  return '<div class="summary-promote"><div class="summary-promote-title">Keep these swaps?</div>' +
+    '<div class="summary-promote-sub">Keeping one starts every future ' + escHtml(label) +
+    ' with it, at the scheme you finished on. Otherwise it stays a one-off.</div>' +
+    rows.map(r => '<div class="summary-promote-row"><div class="summary-promote-what">' +
+      '<div class="summary-promote-name">' + escHtml(r.name) + '</div>' +
+      '<div class="summary-promote-instead">instead of <strong>' + escHtml(r.replaced) + '</strong></div></div>' +
+      '<button class="summary-promote-keep" onclick="promoteSubstitution(\'' + record.id + '\',\'' + r.key + '\')">Keep</button>' +
+      '</div>').join('') +
+    '<button class="summary-promote-dismiss" onclick="dismissPromotionPrompt(\'' + record.id + '\')">Today only</button></div>';
+}
+
+// Promotes one Substitution to permanent. Writes an override carrying the
+// scheme the Session ended with, so the lifter does not re-enter it next week,
+// and nothing else: the completed record still says what happened that day.
+window.promoteSubstitution = function(recordId, key) {
+  const record = getAllSessions().find(s => s.id === recordId);
+  if (!record) return;
+  const row = undecidedSubstitutions(record).find(r => r.key === key);
+  if (!row) return;
+  setOverride(record.dayType, row.prescribed, row.name, row.sets);
+  markDecided(recordId, key, 'permanent');
+  renderSummary(record);
+};
+// The lifter is done answering: every Substitution still open was a one-off.
+// Recorded as such so the question does not come back for this Session.
+window.dismissPromotionPrompt = function(recordId) {
+  const record = getAllSessions().find(s => s.id === recordId);
+  if (!record) return;
+  const open = undecidedSubstitutions(record);
+  if (!open.length) return;
+  const decisions = decisionsFor(recordId);
+  open.forEach(r => { decisions[r.key] = 'day-only'; });
+  saveDecisions(recordId, decisions);
+  renderSummary(record);
+};
+
 function renderFeelSurvey(record) {
   const f = (window._feelDraft && window._feelDraft.recordId === record.id)
     ? window._feelDraft.data : { energy: 0, effort: 0, recovery: 0 };
