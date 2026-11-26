@@ -2015,4 +2015,388 @@ describe('scoring parity survives a scheme edit', () => {
 // (ticket 06's tests go here)
 
 // ── TICKET 09: SUBSTITUTIONS IN HISTORY ────────────────────
-// (ticket 09's tests go here)
+// Renders the Summary of a stored Session and hands back what the lifter reads.
+function renderSummaryOf(app, record) {
+  app.renderSummary(record);
+  return app.document.getElementById('summaryBody').innerHTML;
+}
+
+// What the Summary says in its own right, with the Edit Log it embeds taken
+// out. The Edit Log names a substitute too, so a fact proven on this string is
+// the Summary's own rather than the Edit Log's showing through.
+function summaryWithoutEditLog(app, record) {
+  const html = renderSummaryOf(app, record);
+  const log = app.renderEditLog(record);
+  assert.ok(html.includes(log), 'the Summary embeds the Edit Log');
+  return html.split(log).join('');
+}
+
+// Renders the history list and hands back what the lifter reads.
+function renderHistory(app) {
+  app.renderHistoryPage();
+  return app.document.getElementById('historyContent').innerHTML;
+}
+
+// Logs every Movement of the active Session and files it, returning the stored
+// record. The numbers are arbitrary but distinctive, so a later correction is
+// visible against them.
+function logAndFinish(app) {
+  const s = app.session;
+  Object.values(s.primaries).forEach(p => fillSets(p, 200, p.target.repLow));
+  Object.values(s.accessories).forEach(a => { fillSets(a, 50, a.target.repLow); a.rpe = 3; });
+  Object.values(s.ar7).forEach(a => { a.weight = '40'; a.rounds = 7; });
+  s.feel = { energy: 4, effort: 4, recovery: 4 };
+  app.finishSession();
+  const all = app.getAllSessions();
+  return all[all.length - 1];
+}
+
+// A stored Session record with a chosen Score. The history list, the Day
+// average, the trend and the sparkline read only the Score and the date, so
+// this is as much of a record as they need — which is the point: a Score is a
+// Score whether the Session substituted anything or not.
+function historyRecord(dayType, n, total, substituted) {
+  return {
+    id: 'sess-' + n,
+    dayType,
+    date: '2026-01-0' + n + 'T12:00:00.000Z',
+    durationSec: 3600,
+    primaries: { '0-0': {
+      name: substituted ? 'Hack Squat' : 'Barbell Back Squat',
+      substitutedFor: substituted ? 'Barbell Back Squat' : null,
+      sets: [{ weight: '200', reps: '5' }],
+      target: { numSets: 1, repLow: 5, repHigh: 5 },
+    } },
+    ar7: {},
+    accessories: {},
+    feel: { energy: 4, effort: 4, recovery: 4 },
+    score: { total },
+  };
+}
+
+function seedHistory(app, dayType, totals, substituted) {
+  app.saveAllSessions(totals.map((t, i) => historyRecord(dayType, i + 1, t, substituted)));
+}
+
+// The Day average and session count exactly as the history list prints them.
+// Read as text rather than picked out of the DOM, because what matters is the
+// number a lifter sees.
+function avgShown(html) {
+  const m = /Avg <strong>\d+<\/strong>[^<]*/.exec(html);
+  return m ? m[0] : null;
+}
+
+// Strips every snapshot field a Session recorded before Substitutions existed
+// would never have had, leaving substitutedFor absent rather than null.
+function ageRecord(app, recordId) {
+  const all = app.getAllSessions();
+  const rec = all.find(r => r.id === recordId);
+  const names = [];
+  ['primaries', 'ar7', 'accessories'].forEach(group => {
+    Object.values(rec[group] || {}).forEach(entry => {
+      delete entry.substitutedFor;
+      delete entry.setsStr;
+      delete entry.note;
+      delete entry.baselineId;
+      names.push(entry.name);
+    });
+  });
+  app.saveAllSessions(all);
+  return { names, record: app.getAllSessions().find(r => r.id === recordId) };
+}
+
+describe('a Substitution on the Session Summary', () => {
+  test('the Summary names the substitute and the Movement it replaced', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const found = findSection(app, 'primary', day.id);
+    const s = startOn(app, day);
+    const prescribed = s.primaries[found.key(0)].name;
+
+    substituteVia(app, 'primary', found.key(0), 'Hack Squat');
+    const html = summaryWithoutEditLog(app, logAndFinish(app));
+
+    assert.ok(html.includes('Hack Squat'), 'the substitute is named');
+    assert.ok(html.includes(prescribed), 'the Movement it replaced is named too');
+  });
+
+  test('a Substitution in any logged Section kind reaches the Summary', () => {
+    ['primary', 'ar7', 'accessory'].forEach(cat => {
+      const app = loadAppWithProgram(AR7);
+      const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+      const key = findSection(app, cat, day.id).key(0);
+      const s = startOn(app, day);
+      const prescribed = entryIn(s, cat, key).name;
+
+      substituteVia(app, cat, key, 'Machine Version');
+      const html = summaryWithoutEditLog(app, logAndFinish(app));
+
+      assert.ok(html.includes('Machine Version'), cat + ': the substitute is named');
+      assert.ok(html.includes(prescribed), cat + ': the Movement it replaced is named too');
+    });
+  });
+
+  test('every substituted Movement is listed, and only those', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    const s = startOn(app, day);
+    const substituted = loggedMovements(app, day).slice(0, 2);
+    const untouched = loggedMovements(app, day).slice(2).map(m => m.name);
+
+    substituted.forEach((m, i) => substituteVia(app, m.cat, m.key, 'Stand-In ' + i));
+    const html = summaryWithoutEditLog(app, logAndFinish(app));
+
+    substituted.forEach((m, i) => {
+      assert.ok(html.includes('Stand-In ' + i), 'substitute ' + i + ' is listed');
+      assert.ok(html.includes(m.name), 'what substitute ' + i + ' replaced is listed');
+    });
+    untouched.forEach(name => {
+      assert.ok(!html.includes(name), 'an unsubstituted Movement is not listed: ' + name);
+    });
+  });
+
+  test('a Session with no Substitutions shows nothing about them on the Summary', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    startOn(app, day);
+    const html = renderSummaryOf(app, logAndFinish(app));
+
+    assert.ok(!html.includes('Substituted'), 'no marker on the Summary');
+    assert.ok(!html.includes('replaces'), 'nothing claims to replace anything');
+  });
+});
+
+describe('a Substitution in the post-Session Edit Log', () => {
+  test('the Edit Log is headed by the substitute, so the numbers being corrected match the name', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const key = findSection(app, 'primary', day.id).key(0);
+    const s = startOn(app, day);
+    const prescribed = s.primaries[key].name;
+
+    substituteVia(app, 'primary', key, 'Hack Squat');
+    const log = app.renderEditLog(logAndFinish(app));
+
+    assert.ok(log.includes('Hack Squat'), 'the substitute is named');
+    assert.ok(log.includes(prescribed), 'and the Movement it replaced is named beside it');
+  });
+
+  test('a correction in the Edit Log saves against the substitute, not against its neighbours', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const key = findSection(app, 'primary', day.id).key(0);
+    const s = startOn(app, day);
+    const prescribed = s.primaries[key].name;
+
+    substituteVia(app, 'primary', key, 'Hack Squat');
+    const record = logAndFinish(app);
+    const before = plain(record.primaries);
+
+    app.updateSessionPrimary(record.id, key, 0, 'reps', '19');
+
+    const saved = app.getAllSessions().find(r => r.id === record.id);
+    assert.equal(saved.primaries[key].sets[0].reps, '19', 'the correction landed on the substitute');
+    assert.equal(saved.primaries[key].name, 'Hack Squat', 'it is still the substitute that was logged');
+    assert.equal(saved.primaries[key].substitutedFor, prescribed, 'and it still says what it replaced');
+    Object.keys(before).filter(k => k !== key).forEach(k => {
+      assert.deepEqual(plain(saved.primaries[k]), before[k],
+        'no other Movement was written to: ' + k);
+    });
+  });
+
+  test('an RPE correction on a substituted accessory saves against the substitute', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['accessory']);
+    const key = findSection(app, 'accessory', day.id).key(0);
+    startOn(app, day);
+
+    substituteVia(app, 'accessory', key, 'Cable Row');
+    const record = logAndFinish(app);
+
+    app.updateSessionRpe(record.id, key, 5);
+
+    const saved = app.getAllSessions().find(r => r.id === record.id);
+    assert.equal(saved.accessories[key].rpe, 5);
+    assert.equal(saved.accessories[key].name, 'Cable Row');
+  });
+
+  test('a Session with no Substitutions says nothing about them in the Edit Log', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    startOn(app, day);
+    const log = app.renderEditLog(logAndFinish(app));
+
+    assert.ok(!log.includes('replaces'), 'nothing claims to replace anything');
+  });
+});
+
+describe('Substitutions in the history list', () => {
+  test('the history list marks the Session that contained a Substitution, and only that one', () => {
+    const app = loadAppWithProgram(PPL);
+    const dayType = app.DAYS.find(d => !d.isOff).id;
+    app.saveAllSessions([
+      historyRecord(dayType, 1, 80, false),
+      historyRecord(dayType, 2, 76, true),
+    ]);
+
+    const html = renderHistory(app);
+
+    assert.equal(html.split('Substituted').length - 1, 1,
+      'one of the two Sessions carries the marker');
+  });
+
+  test('a Substitution in any logged Section kind marks the Session in history', () => {
+    ['primary', 'ar7', 'accessory'].forEach(cat => {
+      const app = loadAppWithProgram(AR7);
+      const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+      const key = findSection(app, cat, day.id).key(0);
+      startOn(app, day);
+
+      substituteVia(app, cat, key, 'Machine Version');
+      logAndFinish(app);
+
+      assert.equal(renderHistory(app).split('Substituted').length - 1, 1,
+        cat + ': the Session is marked in history');
+    });
+  });
+
+  test('a Session with no Substitutions carries no marker in history', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    startOn(app, day);
+    logAndFinish(app);
+
+    assert.ok(!renderHistory(app).includes('Substituted'));
+  });
+});
+
+describe('the Day score trend stays comparable across Substitutions', () => {
+  test('the trend, the Day average and the sparkline read the same whether the Sessions substituted anything or not', () => {
+    const totals = [82, 79, 84, 71, 68, 64];
+    const subbed = loadAppWithProgram(PPL);
+    const control = loadAppWithProgram(PPL);
+    const dayType = subbed.DAYS.find(d => !d.isOff).id;
+    seedHistory(subbed, dayType, totals, true);
+    seedHistory(control, dayType, totals, false);
+
+    assert.equal(subbed.lastScoreForDay(dayType), control.lastScoreForDay(dayType));
+    assert.deepEqual(
+      plain(subbed.sessionsByDay(dayType).map(s => s.score.total)),
+      plain(control.sessionsByDay(dayType).map(s => s.score.total)));
+    assert.equal(subbed.checkDeloadNudge(dayType), control.checkDeloadNudge(dayType),
+      'a substituted Session is no more a reason to deload than any other');
+
+    const subbedSpark = subbed.renderSparkline(subbed.sessionsByDay(dayType).slice(-8), false);
+    const controlSpark = control.renderSparkline(control.sessionsByDay(dayType).slice(-8), false);
+    assert.ok(controlSpark.length > 0, 'there is a sparkline to compare');
+    assert.equal(subbedSpark, controlSpark, 'the sparkline is drawn from the Scores alone');
+
+    const subbedAvg = avgShown(renderHistory(subbed));
+    assert.ok(subbedAvg, 'the history list prints a Day average');
+    assert.equal(subbedAvg, avgShown(renderHistory(control)),
+      'the Day average is not discounted for a Substitution');
+  });
+
+  test('substituting a Movement does not move the Score the Session is filed under', () => {
+    const subbed = loadAppWithProgram(PPL);
+    const control = loadAppWithProgram(PPL);
+    const day = dayWithSections(subbed, ['primary']);
+    const key = findSection(subbed, 'primary', day.id).key(0);
+
+    startOn(subbed, day);
+    substituteVia(subbed, 'primary', key, 'Hack Squat');
+    const subbedRecord = logAndFinish(subbed);
+
+    startOn(control, dayWithSections(control, ['primary']));
+    const controlRecord = logAndFinish(control);
+
+    assert.deepEqual(plain(subbedRecord.score), plain(controlRecord.score),
+      'the marker is a marker, not a caveat on the Score');
+  });
+});
+
+describe('a name the lifter typed reaching the screen', () => {
+  test('a substitute name with HTML in it is shown as typed on the Summary and in the Edit Log', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const key = findSection(app, 'primary', day.id).key(0);
+    startOn(app, day);
+
+    substituteVia(app, 'primary', key, '<img src=x onerror="alert(1)">');
+    const record = logAndFinish(app);
+
+    [summaryWithoutEditLog(app, record), app.renderEditLog(record)].forEach((html, i) => {
+      const where = i === 0 ? 'Summary' : 'Edit Log';
+      assert.ok(!html.includes('<img src=x'), where + ': the markup is not live');
+      assert.ok(html.includes('&lt;img src=x'), where + ': it is shown as text');
+      assert.ok(html.includes('&quot;alert(1)&quot;'), where + ': the quotes are escaped too');
+    });
+  });
+
+  test('the Movement a substitute replaced is escaped on the way to the screen as well', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const key = findSection(app, 'primary', day.id).key(0);
+    startOn(app, day);
+
+    substituteVia(app, 'primary', key, 'Hack Squat');
+    const record = logAndFinish(app);
+
+    // A prescribed name has only ever come from the Program, but a Substitution
+    // can be made over a substitute, which puts lifter-typed text here too.
+    const all = app.getAllSessions();
+    const rec = all.find(r => r.id === record.id);
+    rec.primaries[key].substitutedFor = 'Squat <b>"heavy"</b>';
+    app.saveAllSessions(all);
+    const aged = app.getAllSessions().find(r => r.id === record.id);
+
+    [summaryWithoutEditLog(app, aged), app.renderEditLog(aged)].forEach((html, i) => {
+      const where = i === 0 ? 'Summary' : 'Edit Log';
+      assert.ok(!html.includes('<b>"heavy"</b>'), where + ': the markup is not live');
+      assert.ok(html.includes('&lt;b&gt;&quot;heavy&quot;&lt;/b&gt;'), where + ': it is shown as text');
+    });
+  });
+});
+
+describe('a Session recorded before Substitutions existed', () => {
+  test('renders on all three surfaces, with no Substitution claimed anywhere', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['primary', 'ar7', 'accessory']);
+    startOn(app, day);
+    const record = logAndFinish(app);
+    const aged = ageRecord(app, record.id);
+
+    Object.values(aged.record.primaries).forEach(e => assert.ok(!('substitutedFor' in e),
+      'the key is absent on an older record, not null'));
+    assert.ok(aged.names.length > 0, 'the older record logged some Movements');
+
+    const summary = renderSummaryOf(app, aged.record);
+    const log = app.renderEditLog(aged.record);
+    const history = renderHistory(app);
+
+    assert.ok(summary.includes(String(aged.record.score.total)), 'the Summary still shows the Score');
+    aged.names.forEach(name => assert.ok(log.includes(app.escHtml(name)),
+      'the Edit Log still lists ' + name));
+    assert.ok(history.includes(String(aged.record.score.total)), 'the history list still shows the Score');
+
+    assert.ok(!summary.includes('Substituted'), 'the Summary marks nothing');
+    assert.ok(!summary.includes('replaces'), 'the Summary claims nothing was replaced');
+    assert.ok(!history.includes('Substituted'), 'the history list marks nothing');
+  });
+
+  test('an older record whose entries were never substituted can still be corrected', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const key = findSection(app, 'primary', day.id).key(0);
+    startOn(app, day);
+    const record = logAndFinish(app);
+    const aged = ageRecord(app, record.id);
+
+    app.updateSessionPrimary(aged.record.id, key, 0, 'reps', '19');
+
+    const saved = app.getAllSessions().find(r => r.id === record.id);
+    assert.equal(saved.primaries[key].sets[0].reps, '19');
+    assert.ok(!app.renderEditLog(saved).includes('replaces'),
+      'correcting an older record does not invent a Substitution');
+  });
+});
