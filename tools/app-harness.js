@@ -171,6 +171,9 @@ const EXPORTS = [
   'substituteEntry', 'entryFor', 'openSubstituteModal', 'closeSubstituteModal',
   'saveSubstitution', 'SUB_NAME_MAX', 'SUB_SETS_MAX',
   'repRangeOf', 'rewriteScheme', 'setsLostBy', 'resizeSets', 'applyScheme',
+  'renderHistoryPage', 'renderSparkline', 'checkDeloadNudge',
+  'updateSessionPrimary', 'updateSessionAr7Weight', 'updateSessionAr7Rounds',
+  'updateSessionAccessory', 'updateSessionRpe',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];

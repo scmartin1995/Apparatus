@@ -335,6 +335,16 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .sub-marker-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: rgba(0,227,253,0.08); border: 1px solid rgba(0,227,253,0.25); color: var(--c-secondary); padding: 3px 8px; border-radius: 4px; }
 .sub-marker-label { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
 .sub-marker-label strong { color: var(--c-on-surface); font-weight: 600; }
+.summary-subs { display: flex; flex-direction: column; gap: 8px; padding: 16px 0 18px; border-bottom: 1px solid rgba(72,72,71,0.15); }
+.summary-subs-title { font-family: var(--font-h); font-weight: 700; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); }
+.summary-sub-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.summary-sub-name { font-family: var(--font-h); font-weight: 700; font-size: 0.8125rem; color: var(--c-on-surface); }
+.summary-sub-replaced { font-family: var(--font-b); font-size: 0.6875rem; color: var(--c-on-surface-v); }
+.summary-sub-replaced strong { color: var(--c-on-surface); font-weight: 600; }
+.edit-log-group-sub { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
+.edit-log-group-sub strong { color: var(--c-on-surface); font-weight: 600; }
+.session-row-sub { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-h); font-weight: 700; font-size: 0.5625rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-secondary); }
+.session-row-sub .mi { font-size: 0.75rem; }
 .input-field-text { font-size: 1rem; letter-spacing: -0.01em; }
 .input-field-sm { padding: 0.75rem 0.5rem; font-size: 1.125rem; text-align: center; }
 .sub-scheme { grid-template-columns: repeat(3, 1fr); margin-top: 1rem; }
@@ -2537,10 +2547,43 @@ function renderSummary(record) {
     '<div class="comp-row"><div class="comp-label">Hypertrophy</div><div class="comp-bar-wrap"><div class="comp-bar hyper" style="width:' + sc.hyperPct + '%"></div></div><div class="comp-val">' + sc.hyper + '/' + sc.hyperMax + '</div></div>' +
     '<div class="comp-row"><div class="comp-label">Feel</div><div class="comp-bar-wrap"><div class="comp-bar feel" style="width:' + sc.feelPct + '%"></div></div><div class="comp-val">' + sc.feel + '/' + sc.feelMax + '</div></div>' +
     '</div>' +
+    // ── Substitutions on the Summary ── one self-contained block, so the
+    // rest of the Summary is untouched. A marker, not a caveat: nothing
+    // here reads or changes the Score.
+    renderSummarySubs(record) +
+    // ── end of the Substitutions block ──
     '<button id="editLogToggle" class="edit-log-toggle" onclick="toggleEditLog(\'' + record.id + '\')">' +
     '<span class="mi mi-sm" style="font-variation-settings:FILL 0,wght 400,GRAD 0,opsz 24">edit</span>Edit Log</button>' +
     '<div id="editLogSection" class="edit-log-section" style="display:none">' + renderEditLog(record) + '</div>' +
     feelHtml;
+}
+// The Substitutions a Session record carries, by Section kind. A Session
+// recorded before Substitutions existed has no substitutedFor key on its
+// entries at all, so a missing key reads the same as an unsubstituted
+// Movement rather than as something to show.
+function substitutionsIn(record) {
+  const out = [];
+  if (!record) return out;
+  ['primaries', 'ar7', 'accessories'].forEach(group => {
+    const entries = record[group] || {};
+    Object.keys(entries).forEach(key => {
+      const entry = entries[key];
+      if (!entry || !entry.substitutedFor) return;
+      out.push({ name: entry.name || '', replaced: entry.substitutedFor });
+    });
+  });
+  return out;
+}
+// Reviewing a Session should tell the whole story, so the Summary lists each
+// substituted Movement with the Movement it replaced. A substitute name was
+// typed by the lifter, so it is escaped before it reaches innerHTML.
+function renderSummarySubs(record) {
+  const subs = substitutionsIn(record);
+  if (!subs.length) return '';
+  return '<div class="summary-subs"><div class="summary-subs-title">Substituted</div>' +
+    subs.map(s => '<div class="summary-sub-row"><span class="summary-sub-name">' + escHtml(s.name) + '</span>' +
+      '<span class="summary-sub-replaced">replaces <strong>' + escHtml(s.replaced) + '</strong></span></div>').join('') +
+    '</div>';
 }
 function renderFeelSurvey(record) {
   const f = (window._feelDraft && window._feelDraft.recordId === record.id)
@@ -2597,6 +2640,16 @@ window.toggleEditLog = function(recordId) {
   }
 };
 
+// A substituted Movement is logged under the substitute's name, so that is
+// the name to correct numbers against; saying what it replaced keeps an
+// unfamiliar name in an old Session from being a puzzle. Every name here
+// goes through escHtml: a substitute's is lifter-typed free text.
+function editLogName(entry) {
+  return '<span class="edit-log-group-name">' + escHtml(entry.name) + '</span>' +
+    (entry.substitutedFor
+      ? '<span class="edit-log-group-sub">replaces <strong>' + escHtml(entry.substitutedFor) + '</strong></span>'
+      : '');
+}
 function renderEditLog(record) {
   let groups = '';
   Object.keys(record.primaries || {}).forEach(function(key) {
@@ -2609,13 +2662,13 @@ function renderEditLog(record) {
         '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updateSessionPrimary(\'' + record.id + '\',\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
         '</div>';
     }).join('');
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Primary</span><span class="edit-log-group-name">' + p.name + '</span></div><div class="log-sets">' + setsHtml + '</div></div>';
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Primary</span>' + editLogName(p) + '</div><div class="log-sets">' + setsHtml + '</div></div>';
   });
   Object.keys(record.ar7 || {}).forEach(function(key) {
     const a = record.ar7[key];
     let dotsHtml = '';
     for (let r = 0; r < 7; r++) dotsHtml += '<button class="log-ar7-dot ' + (r < a.rounds ? 'done' : '') + '" onclick="updateSessionAr7Rounds(\'' + record.id + '\',\'' + key + '\',' + r + ')"></button>';
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">AR-7</span><span class="edit-log-group-name">' + a.name + '</span></div>' +
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">AR-7</span>' + editLogName(a) + '</div>' +
       '<div class="log-sets"><div class="log-set-row"><span class="log-set-num">LOAD</span><input class="log-input ' + (a.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="lb" value="' + (a.weight||'') + '" oninput="updateSessionAr7Weight(\'' + record.id + '\',\'' + key + '\',this.value)" style="flex:0 0 90px"/><span class="log-input-x" style="font-size:0.625rem">lb</span></div></div>' +
       '<div class="log-ar7" style="margin-top:10px"><span class="log-ar7-label">Rounds</span><div class="log-ar7-dots">' + dotsHtml + '</div><span class="log-ar7-count">' + a.rounds + '/7</span></div></div>';
   });
@@ -2631,7 +2684,7 @@ function renderEditLog(record) {
     }).join('');
     let rpeDots = '';
     for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" onclick="updateSessionRpe(\'' + record.id + '\',\'' + key + '\',' + r + ')">' + r + '</button>';
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Accessory</span><span class="edit-log-group-name">' + acc.name + '</span></div><div class="log-sets">' + setsHtml + '</div><div class="log-rpe" style="margin-top:10px"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div></div>';
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Accessory</span>' + editLogName(acc) + '</div><div class="log-sets">' + setsHtml + '</div><div class="log-rpe" style="margin-top:10px"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div></div>';
   });
   return groups || '<p style="font-size:0.75rem;color:var(--c-on-surface-v);padding:8px 0">No logged data to edit.</p>';
 }
@@ -2752,7 +2805,13 @@ function renderHistoryPage() {
     arr.slice().reverse().slice(0,5).forEach((s, i) => {
       const d = new Date(s.date), dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       const isToday = new Date().toDateString() === d.toDateString();
-      rows += '<div class="session-row" onclick="openSessionSummary(\'' + s.id + '\')"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span><span class="session-row-score" style="' + (isWarn&&i===0?'color:#ffb84d':'') + '">' + s.score.total + '</span></div>';
+      // Marks the Session, so an unusual week is findable. Deliberately not
+      // folded into the average or the sparkline above: the Score of a
+      // substituted Session stands on the same footing as any other.
+      const subMark = substitutionsIn(s).length
+        ? '<span class="session-row-sub" title="Contained a Substitution"><span class="mi">swap_horiz</span>Substituted</span>'
+        : '';
+      rows += '<div class="session-row" onclick="openSessionSummary(\'' + s.id + '\')"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span>' + subMark + '<span class="session-row-score" style="' + (isWarn&&i===0?'color:#ffb84d':'') + '">' + s.score.total + '</span></div>';
     });
     html += '<div class="day-card ' + (isWarn?'warn':'') + '"><div class="day-card-header"><div class="day-card-day" style="color:' + day.accent + '">' + day.label + (day.day?' \xB7 ' + day.day:'') + '</div><div class="day-card-avg">Avg <strong>' + avg + '</strong> \xB7 ' + arr.length + ' session' + (arr.length===1?'':'s') + '</div></div><div class="sparkline-wrap">' + spark + '</div><div class="day-card-sessions">' + rows + '</div></div>';
   });
