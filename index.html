@@ -335,6 +335,9 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .sub-marker-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: rgba(0,227,253,0.08); border: 1px solid rgba(0,227,253,0.25); color: var(--c-secondary); padding: 3px 8px; border-radius: 4px; }
 .sub-marker-label { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
 .sub-marker-label strong { color: var(--c-on-surface); font-weight: 600; }
+.prog-sub-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 0 0 8px 0; padding: 8px 10px; border-radius: 8px; background: rgba(0,227,253,0.05); border: 1px solid rgba(0,227,253,0.18); }
+.prog-sub-row .sub-marker { margin-bottom: 0; flex: 1 1 60%; min-width: 0; }
+.prog-sub-revert { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.12em; background: none; border: 1px solid rgba(255,255,255,0.24); color: var(--c-on-surface); padding: 8px 12px; min-height: 36px; border-radius: 6px; cursor: pointer; flex: 0 0 auto; }
 .summary-subs { display: flex; flex-direction: column; gap: 8px; padding: 16px 0 18px; border-bottom: 1px solid rgba(72,72,71,0.15); }
 .summary-subs-title { font-family: var(--font-h); font-weight: 700; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); }
 .summary-sub-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
@@ -2131,6 +2134,21 @@ function setOverride(dayId, prescribedName, name, setsStr) {
   data[dayId][prescribedName] = { name: name, sets: setsStr || '' };
   saveOverrides(data);
 }
+// Undoes one Permanent Substitution: the Day goes back to prescribing what the
+// Program names. Removing a Day's last override takes the Day's own entry with
+// it, so an empty husk is never left behind to read as "this Day has Permanent
+// Substitutions" on a later pass.
+function removeOverride(dayId, prescribedName) {
+  if (!dayId || !prescribedName) return;
+  try {
+    const data = loadOverrides();
+    const forDay = data[dayId];
+    if (!forDay || typeof forDay !== 'object' || !(prescribedName in forDay)) return;
+    delete forDay[prescribedName];
+    if (!Object.keys(forDay).length) delete data[dayId];
+    saveOverrides(data);
+  } catch(e) {}
+}
 // The Movement the Program prescribes at a Session snapshot key. An override is
 // keyed by that, not by what the lifter is looking at — which is already the
 // substitute when they are substituting on top of a Permanent Substitution.
@@ -3333,22 +3351,66 @@ function renderProgPage() {
   const trainDays = DAYS.filter(d => !d.isOff);
   const imported = new Date(PROGRAM.importedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   el.innerHTML = '<div class="prog-hero-label">Active Program</div>' +
-    '<h2 class="prog-hero-title">' + PROGRAM.name + '</h2>' +
+    '<h2 class="prog-hero-title">' + escHtml(PROGRAM.name) + '</h2>' +
     '<p class="prog-hero-sub">' + trainDays.length + ' Training Day' + (trainDays.length!==1?'s':'') + ' \xB7 Imported ' + imported + '</p>' +
     '<div class="bento-grid">' +
     '<div class="glass-card"><h3 class="prog-sub-heading">Schedule</h3><div class="schedule-list">' +
-    DAYS.filter(d=>!d.isOff).map(d => '<div class="schedule-item">' + (d.day||d.id) + ' \u2014 <strong>' + d.label + '</strong> \xB7 <span style="color:var(--c-on-surface-v)">' + d.sub + '</span></div>').join('') +
+    DAYS.filter(d=>!d.isOff).map(d => '<div class="schedule-item">' + escHtml(d.day||d.id) + ' \u2014 <strong>' + escHtml(d.label) + '</strong> \xB7 <span style="color:var(--c-on-surface-v)">' + escHtml(d.sub) + '</span></div>').join('') +
     '</div></div>' +
     '<div class="stat-cards"><div class="stat-card"><div class="stat-label">Training Days</div><div class="stat-val-row"><span class="stat-num">' + trainDays.length + '</span><span class="stat-unit">/Week</span></div></div>' +
     '<div class="stat-card"><div class="stat-label">Baselines</div><div class="stat-val-row"><span class="stat-num">' + BASELINES.length + '</span><span class="stat-unit">Lifts</span></div></div></div>' +
     '</div>' +
-    trainDays.map(day =>
-      '<div class="prog-day-card">' +
-      '<div class="prog-day-header"><div class="prog-day-dot" style="background:' + day.accent + '"></div><h3 style="font-family:var(--font-h);font-weight:800;font-size:1.125rem;color:' + day.accent + ';margin:0">' + day.label + '</h3>' + (day.duration ? '<span style="font-family:var(--font-b);font-size:0.75rem;color:var(--c-on-surface-v)">' + day.duration + '</span>' : '') + '</div>' +
-      (day.notes ? '<p style="font-size:0.8125rem;color:var(--c-on-surface-v);line-height:1.6;margin-bottom:1rem">' + day.notes + '</p>' : '') +
-      '<div class="schedule-list">' + day.sections.map(sec => '<div class="schedule-item"><strong>' + sec.title + '</strong>' + (sec.items.length ? ' \xB7 ' + sec.items.map(i=>i.name).slice(0,3).join(', ') + (sec.items.length>3?'…':'') : '') + '</div>').join('') + '</div></div>'
-    ).join('');
+    trainDays.map(day => {
+      // Through the resolver, so the Program view shows the lifter what they are
+      // actually going to do. The Day in DAYS is the Program definition and a
+      // Substitution never writes to it — the clone is what gets rendered.
+      const eff = effectiveDay(day);
+      const dayIndex = DAYS.indexOf(day);
+      return '<div class="prog-day-card">' +
+      '<div class="prog-day-header"><div class="prog-day-dot" style="background:' + eff.accent + '"></div><h3 style="font-family:var(--font-h);font-weight:800;font-size:1.125rem;color:' + eff.accent + ';margin:0">' + escHtml(eff.label) + '</h3>' + (eff.duration ? '<span style="font-family:var(--font-b);font-size:0.75rem;color:var(--c-on-surface-v)">' + escHtml(eff.duration) + '</span>' : '') + '</div>' +
+      (eff.notes ? '<p style="font-size:0.8125rem;color:var(--c-on-surface-v);line-height:1.6;margin-bottom:1rem">' + escHtml(eff.notes) + '</p>' : '') +
+      '<div class="schedule-list">' + eff.sections.map((sec, si) =>
+        '<div class="schedule-item"><strong>' + escHtml(sec.title) + '</strong>' + (sec.items.length ? ' \xB7 ' + sec.items.map(i=>escHtml(i.name)).slice(0,3).join(', ') + (sec.items.length>3?'…':'') : '') + '</div>' +
+        // Each Substitution gets its own row under the Section it stands in, so
+        // it is marked and labelled even when the Section summary above has run
+        // out of room to list it.
+        sec.items.map((i, ii) => i.substitutedFor ? progSubRow(dayIndex, si, ii, i) : '').join('')
+      ).join('') + '</div></div>';
+    }).join('');
 }
+// One permanently substituted Movement on a Program Day card: marked as a
+// Substitution, labelled with the Movement it stands in for, and carrying the
+// control that reverts it in place, without starting a Session.
+//
+// Positions rather than names reach the handler. A prescribed Movement name is
+// Program text that can hold a quote, and surviving a JS string literal inside
+// an HTML attribute is not something escHtml does.
+function progSubRow(dayIndex, si, ii, item) {
+  return '<div class="prog-sub-row">' +
+    '<div class="sub-marker"><span class="sub-marker-badge">Substituted</span>' +
+    '<span class="sub-marker-label"><strong>' + escHtml(item.name) + '</strong> replaces <strong>' + escHtml(item.substitutedFor) + '</strong></span></div>' +
+    '<button class="prog-sub-revert" onclick="revertPermanentHere(' + dayIndex + ',' + si + ',' + ii + ')">Revert</button>' +
+    '</div>';
+}
+// Undoes a Permanent Substitution from the Program view, in place: the Day goes
+// back to prescribing what the Program names, and the next Session starts from
+// it. Nothing is lost that the form cannot make again, so unlike a mid-Session
+// revert — which discards logged work — this does not ask first.
+function revertPermanentSubstitution(dayId, prescribedName) {
+  if (!dayId || !prescribedName) return false;
+  const forDay = loadOverrides()[dayId];
+  if (!forDay || !forDay[prescribedName]) return false;
+  removeOverride(dayId, prescribedName);
+  renderProgPage();
+  // The Workout view reads the same overrides, so it is brought back in step.
+  render();
+  return true;
+}
+window.revertPermanentHere = function(dayIndex, si, ii) {
+  const day = DAYS[dayIndex];
+  if (!day) return false;
+  return revertPermanentSubstitution(day.id, prescribedNameAt(day.id, si + '-' + ii));
+};
 
 // ── RENDER: IMPORT PAGE ────────────────────────────────────
 function openImportPage() {
@@ -3505,9 +3567,13 @@ function render() {
   }).join('');
   document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchDay(b.dataset.dayId)));
 
-  const day = DAYS.find(d => d.id === activeDay);
-  if (!day) return;
-  if (day.isOff) { renderOffDays(day); return; }
+  const raw = DAYS.find(d => d.id === activeDay);
+  if (!raw) return;
+  // The Off Day view resolves the Day for itself; everything past this line
+  // works from the effective Day, so no surface shows the lifter a Movement a
+  // Permanent Substitution has already taken out of the Day.
+  if (raw.isOff) { renderOffDays(raw); return; }
+  const day = effectiveDay(raw);
   if (session && session.dayType === activeDay) { renderSessionMode(day); return; }
 
   const lastScore = lastScoreForDay(day.id);
@@ -3535,9 +3601,9 @@ function render() {
     const borderStyle = isAr7 ? 'style="border-left-color:' + day.accent + '"' : '';
     const itemsHtml = sec.items.map(item => {
       const setsStr = displaySets(item, baselines);
-      return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + item.name + '</div>' + (item.note?'<div class="section-item-note">'+item.note+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + setsStr + '</span></div>';
+      return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + escHtml(item.name) + '</div>' + subMarkerHtml(item) + (item.note?'<div class="section-item-note">'+escHtml(item.note)+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + escHtml(setsStr) + '</span></div>';
     }).join('');
-    return '<details class="section-accordion' + (isAr7?' ar7':'') + '" ' + (isOpen?'open':'') + ' ' + borderStyle + '><summary class="section-summary" data-key="' + key + '" onclick="toggleSection(\'' + key + '\',event)"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + sec.title + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
+    return '<details class="section-accordion' + (isAr7?' ar7':'') + '" ' + (isOpen?'open':'') + ' ' + borderStyle + '><summary class="section-summary" data-key="' + key + '" onclick="toggleSection(\'' + key + '\',event)"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + escHtml(sec.title) + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
   }).join('');
 
   document.getElementById('content').innerHTML =
@@ -3548,7 +3614,20 @@ function render() {
     '<div class="sections-list">' + sectionsHtml + '</div>';
 }
 
-function renderOffDays(day) {
+// Marks a Movement as a Substitution and labels it with what it replaced, so a
+// Permanent Substitution never reads as the Program having changed on its own.
+// Reads substitutedFor off the effective Day rather than the override store,
+// because the resolver has already worked out which Movement was replaced.
+function subMarkerHtml(item) {
+  if (!item || !item.substitutedFor) return '';
+  return '<div class="sub-marker"><span class="sub-marker-badge">Substituted</span>' +
+    '<span class="sub-marker-label">replaces <strong>' + escHtml(item.substitutedFor) + '</strong></span></div>';
+}
+function renderOffDays(rawDay) {
+  // Through the resolver like every other surface that shows a Day's Movements.
+  // An Off Day can carry prescribed Movements from an imported Program, so a
+  // Permanent Substitution has to show here too, not only on a Training Day.
+  const day = effectiveDay(rawDay);
   // If the off day has sections defined in the CSV, render them
   if (day.sections && day.sections.length > 0) {
     const baselines = loadBaselines();
@@ -3556,12 +3635,12 @@ function renderOffDays(day) {
       const isAr7 = !!sec.ar7;
       const itemsHtml = sec.items.map(item => {
         const setsStr = displaySets(item, baselines);
-        return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + item.name + '</div>' + (item.note?'<div class="section-item-note">'+item.note+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + setsStr + '</span></div>';
+        return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + escHtml(item.name) + '</div>' + subMarkerHtml(item) + (item.note?'<div class="section-item-note">'+escHtml(item.note)+'</div>':'') + '</div><span class="section-item-sets" style="color:' + day.accent + '">' + escHtml(setsStr) + '</span></div>';
       }).join('');
       const borderStyle = isAr7 ? 'style="border-left-color:' + day.accent + '"' : '';
-      return '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '><summary class="section-summary"><div class="section-summary-left"><span class="mi" style="color:#adaaaa">' + (sec.icon||'layers') + '</span><span class="section-title">' + sec.title + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
+      return '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '><summary class="section-summary"><div class="section-summary-left"><span class="mi" style="color:#adaaaa">' + (sec.icon||'layers') + '</span><span class="section-title">' + escHtml(sec.title) + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
     }).join('');
-    document.getElementById('content').innerHTML = '<div class="session-day-label">' + day.day + '</div><h2 class="session-title" style="color:' + day.accent + '">' + day.label + '</h2><div class="session-meta"><span class="session-sub">' + day.sub + '</span></div><div class="sections-list">' + sectionsHtml + '</div>';
+    document.getElementById('content').innerHTML = '<div class="session-day-label">' + escHtml(day.day) + '</div><h2 class="session-title" style="color:' + day.accent + '">' + escHtml(day.label) + '</h2><div class="session-meta"><span class="session-sub">' + escHtml(day.sub) + '</span></div><div class="sections-list">' + sectionsHtml + '</div>';
     return;
   }
 

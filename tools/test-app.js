@@ -3496,7 +3496,382 @@ describe('reverting a day-only Substitution made on top of a Permanent one', () 
 });
 
 // ── TICKET 07: PERMANENT SUBSTITUTIONS IN THE PROGRAM VIEW ─
-// (ticket 07's tests go here)
+// The Program view as the lifter reads it.
+function progHtml(app) {
+  app.renderProgPage();
+  return app.document.getElementById('progBody').innerHTML;
+}
+
+// The Workout view for a Day, which is the Off Day view when the Day is one.
+function dayViewHtml(app, day) {
+  app.activeDay = day.id;
+  app.render();
+  return app.document.getElementById('content').innerHTML;
+}
+
+// Writes an override store for the active Program by hand. An Off Day cannot be
+// substituted on from a Session, so its Permanent Substitutions have to be
+// stated directly rather than made through the form.
+function writeOverrides(app, forDays) {
+  const map = {};
+  map[app.currentProgramId()] = forDays;
+  app.localStorage.setItem('apparatus_overrides', JSON.stringify(map));
+}
+
+// A Substitution's own row carries the Movement it replaced on purpose, so it is
+// subtracted before asking what the Day itself now lists.
+function progWithoutSubRows(html) {
+  const bare = html.replace(/<div class="prog-sub-row">[\s\S]*?<\/button><\/div>/g, '');
+  assert.ok(bare.length < html.length, 'the Program view showed a Substitution to subtract');
+  return bare;
+}
+
+// The Program view's row for one substitute: marked as a Substitution and
+// labelled with the Movement it stands in for. Names are matched as they reach
+// the screen, so an unescaped name does not pass for an escaped one.
+function subRowFor(app, html, substituteName, prescribedName) {
+  return html.split('<div class="prog-sub-row">').slice(1).find(part =>
+    part.includes('Substituted') &&
+    part.includes('<strong>' + app.escHtml(substituteName) + '</strong>') &&
+    part.includes('replaces <strong>' + app.escHtml(prescribedName) + '</strong>'));
+}
+
+// Taps the Revert control the Program view shows for a substitute, reading the
+// position off the control itself rather than being told it.
+function revertFromProgramView(app, substituteName) {
+  const row = progHtml(app).split('<div class="prog-sub-row">').slice(1)
+    .find(part => part.includes('<strong>' + app.escHtml(substituteName) + '</strong> replaces'));
+  assert.ok(row, 'the Program view offers a Revert control for ' + substituteName);
+  const at = row.match(/revertPermanentHere\((\d+),(\d+),(\d+)\)/);
+  assert.ok(at, 'the Revert control is wired to a position in the Day');
+  return app.revertPermanentHere(Number(at[1]), Number(at[2]), Number(at[3]));
+}
+
+// A one-Day imported Program whose own text holds markup, so the escaping of a
+// prescribed name, a Section title and a Day label can be checked too — not
+// only of the name a lifter typed.
+function importProgramWithMarkupNames(app) {
+  const program = {
+    id: 'prog-markup-names', name: 'Markup <b>"Names"</b>',
+    importedAt: '2026-01-01T00:00:00Z', locked: false, weekdayMap: null, baselines: [],
+    days: [{
+      id: 'legs-m', label: 'LEGS <b>"M"</b>', day: 'MON', sub: 'Quads & "more"',
+      accent: '#ffffff', duration: '~60 min', notes: 'Spare the <i>knees</i>', isOff: false,
+      sections: [{
+        title: 'Primary <b>"Strength"</b>', icon: 'fitness_center', type: 'primary', ar7: false,
+        items: [{ name: 'Squat <b>"heavy"</b>', sets: '3 × 5', note: '', restSeconds: null }],
+      }],
+    }],
+  };
+  app.saveProgram(program);
+  app.initProgramState();
+  return program;
+}
+
+describe('a Permanent Substitution in the Program view', () => {
+  test('the substitute stands where the prescribed Movement was', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+
+    const listed = progWithoutSubRows(progHtml(app));
+    assert.ok(listed.includes('Trap Bar Deadlift'), 'the Day lists the substitute');
+    assert.ok(!listed.includes(m.name),
+      'and no longer lists ' + m.name + ', which it does not prescribe any more');
+  });
+
+  test('it is marked as a Substitution and labelled with the Movement it replaced', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+
+    const html = progHtml(app);
+    const row = subRowFor(app, html, 'Trap Bar Deadlift', m.name);
+    assert.ok(row, 'the Program view marks it Substituted and says what it replaces');
+    assert.ok(row.includes('Revert'), 'with the control that undoes it in the same place');
+  });
+
+  test('a Day the lifter has not substituted on is marked nowhere', () => {
+    const app = loadAppWithProgram(PPL);
+    const html = progHtml(app);
+    assert.ok(!html.includes('prog-sub-row'), 'no Substitution row');
+    assert.ok(!html.includes('Substituted'), 'and nothing claiming a Movement was substituted');
+  });
+});
+
+describe('reverting a Permanent Substitution from the Program view', () => {
+  test('it can be undone without starting a Session', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+    // The Session that made it is over; the lifter is reading the Program.
+    app.session = null;
+    app.clearDraft();
+
+    assert.equal(revertFromProgramView(app, 'Trap Bar Deadlift'), true);
+    assert.equal(app.session, null, 'and no Session was needed to do it');
+    assert.deepEqual(plain(app.loadOverrides()), {},
+      'the Permanent Substitution is gone from the store');
+    const html = progHtml(app);
+    assert.ok(html.includes(m.name), 'the Program view prescribes ' + m.name + ' again');
+    assert.ok(!html.includes('Trap Bar Deadlift'), 'and says nothing about the substitute');
+  });
+
+  test('reverting here does not ask, because it discards no logged work', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+    app.session = null;
+    const askedBefore = app.confirmsAsked().length;
+    // A spurious confirm would be answered no, so it fails on the count and
+    // again on the revert that never happened.
+    app.answerConfirm(false);
+
+    assert.equal(revertFromProgramView(app, 'Trap Bar Deadlift'), true);
+    assert.equal(app.confirmsAsked().length, askedBefore, 'nothing was asked');
+    assert.deepEqual(plain(app.loadOverrides()), {});
+  });
+
+  test('the Program view and the next Session both prescribe the Movement again, working range and all', () => {
+    const app = loadAppWithProgram(PPL);
+    const lift = boundLift(app);
+    const shownBefore = dayViewHtml(app, lift.day);
+    assert.ok(shownBefore.includes(app.displaySets(lift.item, app.loadBaselines())),
+      'the Day view shows the working range the 1RM gives ' + lift.item.name);
+
+    startOn(app, lift.day);
+    substitutePermanently(app, lift.cat, lift.key, 'Trap Bar Deadlift');
+    app.session = null;
+    app.clearDraft();
+    assert.ok(!dayViewHtml(app, lift.day).includes(app.displaySets(lift.item, app.loadBaselines())),
+      'while the substitute stands in, the prescribed working range is not on screen');
+
+    revertFromProgramView(app, 'Trap Bar Deadlift');
+
+    assert.ok(dayViewHtml(app, lift.day).includes(app.displaySets(lift.item, app.loadBaselines())),
+      'after reverting, the working range from its 1RM is back');
+    const s = app.initSession(lift.day.id);
+    const entry = entryIn(s, lift.cat, lift.key);
+    assert.equal(entry.name, lift.item.name, 'and the next Session starts on ' + lift.item.name);
+    assert.equal(entry.substitutedFor, null, 'with nothing standing in for it');
+    assert.equal(app.displaySets(app.snapshotAsMovement(entry)),
+      app.displaySets(lift.item, app.loadBaselines()),
+      'against the prescribed range from its 1RM');
+  });
+
+  test('reverting one Day leaves the other Days and their Movements alone', () => {
+    const app = loadAppWithProgram(PPL);
+    importTwoDayProgram(app);
+    const a = app.DAYS.find(d => d.id === 'legs-a');
+    const b = app.DAYS.find(d => d.id === 'legs-b');
+    writeOverrides(app, {
+      'legs-a': {
+        'Hack Squat': { name: 'Pendulum Squat', sets: '3 × 8–10' },
+        'Leg Extension': { name: 'Sissy Squat', sets: '3 × 12–15' },
+      },
+      'legs-b': { 'Hack Squat': { name: 'Belt Squat', sets: '3 × 8–10' } },
+    });
+
+    assert.equal(revertFromProgramView(app, 'Pendulum Squat'), true);
+
+    assert.deepEqual(plain(app.loadOverrides()), {
+      'legs-a': { 'Leg Extension': { name: 'Sissy Squat', sets: '3 × 12–15' } },
+      'legs-b': { 'Hack Squat': { name: 'Belt Squat', sets: '3 × 8–10' } },
+    }, 'only the one Permanent Substitution was undone');
+
+    const html = progHtml(app);
+    assert.ok(subRowFor(app, html, 'Sissy Squat', 'Leg Extension'),
+      'the other Substitution on the same Day still stands');
+    assert.ok(subRowFor(app, html, 'Belt Squat', 'Hack Squat'),
+      'and so does the one on the other Day');
+    assert.ok(dayViewHtml(app, b).includes('Belt Squat'),
+      'LEGS B still does Belt Squat');
+    assert.ok(!dayViewHtml(app, a).includes('Pendulum Squat'),
+      'while LEGS A has gone back to Hack Squat');
+    assert.ok(dayViewHtml(app, a).includes('Hack Squat'));
+  });
+});
+
+describe('removing a Permanent Substitution from the store', () => {
+  test('a Day whose last override goes leaves no empty husk behind', () => {
+    const app = loadAppWithProgram(PPL);
+    importTwoDayProgram(app);
+    writeOverrides(app, {
+      'legs-a': { 'Hack Squat': { name: 'Pendulum Squat', sets: '3 × 8–10' } },
+      'legs-b': { 'Hack Squat': { name: 'Belt Squat', sets: '3 × 8–10' } },
+    });
+
+    app.removeOverride('legs-a', 'Hack Squat');
+
+    const left = plain(app.loadOverrides());
+    assert.deepEqual(Object.keys(left), ['legs-b'],
+      'the Day is gone from the store, not left holding nothing');
+    assert.ok(!('legs-a' in left));
+  });
+
+  test('removing a Movement the Day never had changes nothing', () => {
+    const app = loadAppWithProgram(PPL);
+    importTwoDayProgram(app);
+    writeOverrides(app, {
+      'legs-a': { 'Hack Squat': { name: 'Pendulum Squat', sets: '3 × 8–10' } },
+    });
+    const before = plain(app.loadOverrides());
+
+    app.removeOverride('legs-a', 'Leg Extension');
+    app.removeOverride('legs-b', 'Hack Squat');
+    app.removeOverride('', 'Hack Squat');
+    app.removeOverride('legs-a', '');
+
+    assert.deepEqual(plain(app.loadOverrides()), before);
+  });
+
+  test('a corrupt store degrades to no Permanent Substitutions rather than throwing', () => {
+    const app = loadAppWithProgram(PPL);
+    app.localStorage.setItem('apparatus_overrides', '{not json');
+    app.removeOverride('pull', 'Conventional Deadlift');
+    assert.deepEqual(plain(app.loadOverrides()), {});
+    assert.ok(!progHtml(app).includes('Substituted'),
+      'and the Program view reads as a Program nobody has substituted on');
+  });
+});
+
+describe('the Off Day view renders the effective Day', () => {
+  test('a Permanent Substitution on an Off Day stands in, marked and labelled', () => {
+    const app = loadAppWithProgram(PPL);
+    const off = app.DAYS.find(d => d.isOff && d.sections && d.sections.length);
+    const prescribed = off.sections.find(s => s.items.length).items[0].name;
+    writeOverrides(app, (() => {
+      const forDays = {}; forDays[off.id] = {};
+      forDays[off.id][prescribed] = { name: 'Rower — Steady State', sets: '20 min' };
+      return forDays;
+    })());
+
+    const html = dayViewHtml(app, off);
+    assert.ok(html.includes('Rower — Steady State'), 'the Off Day shows what the lifter does');
+    assert.ok(html.includes('20 min'), 'with the substitute’s own scheme');
+    assert.ok(html.includes('replaces <strong>' + prescribed + '</strong>'),
+      'labelled with the Movement it replaced');
+    assert.ok(html.includes('Substituted'), 'and marked as a Substitution');
+  });
+
+  test('an Off Day nobody has substituted on still lists what the Program prescribes', () => {
+    const app = loadAppWithProgram(PPL);
+    const off = app.DAYS.find(d => d.isOff && d.sections && d.sections.length);
+    const html = dayViewHtml(app, off);
+    off.sections.forEach(sec => sec.items.forEach(item => {
+      assert.ok(html.includes(app.escHtml(item.name)), off.id + ' still prescribes ' + item.name);
+    }));
+    assert.ok(!html.includes('Substituted'));
+  });
+});
+
+describe('a Day with no Permanent Substitutions', () => {
+  test('renders exactly as it did before one was ever made', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const other = app.DAYS.find(d => !d.isOff && d.id !== day.id);
+    const off = app.DAYS.find(d => d.isOff);
+    const before = { prog: progHtml(app), day: dayViewHtml(app, day),
+      other: dayViewHtml(app, other), off: dayViewHtml(app, off) };
+
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+    app.session = null;
+    app.clearDraft();
+    assert.notEqual(progHtml(app), before.prog, 'the Substitution did show up');
+    assert.equal(dayViewHtml(app, other), before.other,
+      'and nowhere near the Day it was not made on');
+    assert.equal(dayViewHtml(app, off), before.off, 'nor on the Off Day');
+
+    revertFromProgramView(app, 'Trap Bar Deadlift');
+
+    assert.equal(progHtml(app), before.prog, 'the Program view is back to what it was');
+    assert.equal(dayViewHtml(app, day), before.day, 'and so is the Day');
+  });
+});
+
+describe('nothing the Program view does reaches the Program definition', () => {
+  test('rendering and reverting leave the Program, the Days and the built-ins untouched', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const off = app.DAYS.find(d => d.isOff);
+    const programBefore = plain(app.PROGRAM);
+    // loadAppWithProgram hands over a clone, so a mutation of DAYS hides inside
+    // a comparison against the built-ins. Both are checked.
+    const daysBefore = plain(app.DAYS);
+    const builtInsBefore = plain(app.BUILT_IN_PROGRAMS);
+
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, 'Trap Bar Deadlift');
+    app.session = null;
+    app.clearDraft();
+    progHtml(app);
+    dayViewHtml(app, day);
+    dayViewHtml(app, off);
+    revertFromProgramView(app, 'Trap Bar Deadlift');
+    progHtml(app);
+
+    assert.deepEqual(plain(app.DAYS), daysBefore, 'the Days still prescribe what they did');
+    assert.deepEqual(plain(app.PROGRAM), programBefore);
+    assert.deepEqual(plain(app.BUILT_IN_PROGRAMS), builtInsBefore);
+    assert.equal(app.loadStoredProgram(), null, 'and no Program was written to storage');
+  });
+});
+
+describe('a name reaching the Program view', () => {
+  test('a substitute name with HTML in it is shown as typed, not run', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    startOn(app, day);
+    substitutePermanently(app, m.cat, m.key, '<img src=x onerror="alert(1)">');
+    app.session = null;
+
+    [progHtml(app), dayViewHtml(app, day)].forEach((html, i) => {
+      const where = i === 0 ? 'Program view' : 'Day view';
+      assert.ok(!html.includes('<img src=x'), where + ': the markup is not live');
+      assert.ok(html.includes('&lt;img src=x'), where + ': it is shown as text');
+      assert.ok(html.includes('&quot;alert(1)&quot;'), where + ': the quotes are escaped too');
+    });
+  });
+
+  test('Program text with HTML in it is escaped on the way to the screen as well', () => {
+    const app = loadAppWithProgram(PPL);
+    importProgramWithMarkupNames(app);
+    const day = app.DAYS[0];
+    startOn(app, day);
+    substitutePermanently(app, 'primary', '0-0', 'Belt Squat');
+    app.session = null;
+    app.clearDraft();
+
+    const html = progHtml(app);
+    // A prescribed Movement name, a Section title and a Day label have only ever
+    // come from the Program — but a Program is imported from a CSV a lifter
+    // wrote, so none of them is trusted markup.
+    assert.ok(html.includes('replaces <strong>Squat &lt;b&gt;&quot;heavy&quot;&lt;/b&gt;</strong>'),
+      'the Movement the substitute replaced is escaped');
+    assert.ok(html.includes('LEGS &lt;b&gt;&quot;M&quot;&lt;/b&gt;'), 'and the Day label');
+    assert.ok(html.includes('Primary &lt;b&gt;&quot;Strength&quot;&lt;/b&gt;'),
+      'and the Section title');
+    assert.ok(!html.includes('<b>"'), 'none of it is live markup');
+
+    revertFromProgramView(app, 'Belt Squat');
+    const back = progHtml(app);
+    assert.ok(back.includes('Squat &lt;b&gt;&quot;heavy&quot;&lt;/b&gt;'),
+      'and the prescribed Movement comes back escaped too');
+    assert.ok(!back.includes('<b>"'));
+  });
+});
 
 // ── TICKET 08: END-OF-SESSION PROMOTION PROMPT ─────────────
 
