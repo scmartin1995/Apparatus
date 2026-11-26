@@ -171,6 +171,7 @@ const EXPORTS = [
   'substituteEntry', 'entryFor', 'openSubstituteModal', 'closeSubstituteModal',
   'saveSubstitution', 'SUB_NAME_MAX', 'SUB_SETS_MAX',
   'repRangeOf', 'rewriteScheme', 'setsLostBy', 'resizeSets', 'applyScheme',
+  'prescribedItemFor', 'loggedValuesIn', 'revertEntry', 'revertSubstitution',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];
