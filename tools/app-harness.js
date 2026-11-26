@@ -178,6 +178,8 @@ const EXPORTS = [
   'prescribedNameAt', 'effectiveDay',
   'generateCSVTemplate', 'renderBaselines',
   'prescribedItemFor', 'loggedValuesIn', 'revertEntry', 'revertSubstitution',
+  'removeOverride', 'revertPermanentSubstitution', 'revertPermanentHere',
+  'renderProgPage', 'renderOffDays',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];
