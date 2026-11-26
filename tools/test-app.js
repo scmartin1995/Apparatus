@@ -4145,3 +4145,174 @@ describe('the End-of-Session promotion prompt', () => {
     assert.ok(!text.includes('<b>'), 'the markup the lifter typed is not markup');
   });
 });
+
+// ── PRE-FEATURE COMPARISON: A SESSION WITH NO SUBSTITUTIONS ─
+
+// Why this section exists. Ticket 02 flipped where session mode reads from:
+// each Movement's name, scheme and target used to come off the Program, with
+// only the logged values coming off the Session snapshot, and now all of them
+// come off the snapshot. Tickets 03-08 then built Substitutions on top of
+// that flip. The risk the whole feature carries is that a lifter who never
+// substitutes anything quietly gets a different Session than they had before,
+// so this pins the no-Substitution case against the build that shipped before
+// any of the work began.
+//
+// The reference build is extracted from git when the suite runs rather than
+// checked in as a second copy of the app. If it cannot be extracted — no git
+// on the path, or a clone without that commit — these tests skip: a reference
+// that is not available is not a regression, and the rest of the suite still
+// means what it means.
+//
+// What is deliberately not compared is the rendered HTML byte for byte. The
+// substitute control is new markup on every Movement, so a raw comparison
+// fails for reasons that prove nothing. What is compared is what a lifter
+// would notice: the Score an identical Session produces, and the Movement
+// names, schemes and targets the snapshot carries.
+
+// The commit before the feature work began: "Add biking to off days, move
+// off-day content into the program".
+const PRE_FEATURE_COMMIT = 'be5dc52';
+
+// Extracts the pre-feature index.html to a temp file once per run and hands
+// back its path, or null if git cannot produce something that loads.
+const preFeatureHtml = (() => {
+  let resolved;
+  return () => {
+    if (resolved !== undefined) return resolved;
+    try {
+      const cp = require('node:child_process');
+      const fs = require('node:fs');
+      const os = require('node:os');
+      const p = require('node:path');
+      const out = p.join(os.tmpdir(), 'apparatus-' + PRE_FEATURE_COMMIT + '.html');
+      fs.writeFileSync(out, cp.execFileSync(
+        'git', ['show', PRE_FEATURE_COMMIT + ':index.html'],
+        { cwd: p.resolve(__dirname, '..'), maxBuffer: 64 * 1024 * 1024 }));
+      loadApp(out); // fail here rather than inside a test
+      resolved = out;
+    } catch (err) {
+      resolved = null;
+      console.error('pre-feature comparison skipped: ' + err.message);
+    }
+    return resolved;
+  };
+})();
+
+const PRE_FEATURE = preFeatureHtml();
+const SKIP_PRE_FEATURE = PRE_FEATURE
+  ? false
+  : 'the pre-feature build (' + PRE_FEATURE_COMMIT + ') could not be loaded';
+
+describe('a Session with no Substitutions, against the build before the feature', () => {
+  // Logs the same work the same way in whichever build it is handed, so the
+  // only thing that can differ is the app. Nothing here substitutes anything.
+  function logEverything(app, dayId) {
+    const s = app.initSession(dayId);
+    Object.keys(s.primaries).sort().forEach((k, i) => {
+      s.primaries[k].sets.forEach((set, j) => {
+        set.weight = String(185 + i * 10 + j * 5);
+        set.reps = String(s.primaries[k].target.repLow + (j % 2));
+      });
+    });
+    Object.keys(s.ar7).sort().forEach((k, i) => {
+      s.ar7[k].rounds = 5 + (i % 3);
+      s.ar7[k].weight = String(40 + i * 5);
+    });
+    Object.keys(s.accessories).sort().forEach((k, i) => {
+      s.accessories[k].rpe = 3 + (i % 3);
+    });
+    s.feel = { energy: 4, effort: 5, recovery: 3 };
+    return s;
+  }
+
+  // What a lifter reads off each Movement: what it is called, the scheme it
+  // prescribes, and the target it will be graded against. Deliberately not
+  // the whole entry — the snapshot has gained fields (baselineId,
+  // substitutedFor) that the old build never wrote, which is the feature
+  // working, not a regression.
+  function movementFacts(s) {
+    const facts = {};
+    ['primaries', 'ar7', 'accessories'].forEach(group => {
+      facts[group] = {};
+      Object.keys(s[group]).sort().forEach(key => {
+        const e = s[group][key];
+        facts[group][key] = { name: e.name, setsStr: e.setsStr, target: plain(e.target) };
+      });
+    });
+    return facts;
+  }
+
+  // Every Day of both bundled Programs, Off Days included, paired across the
+  // two builds. Two separately loaded builds are two vm realms, so anything
+  // structural goes through plain() before it is compared.
+  function eachDay(fn) {
+    [PPL, AR7].forEach(programId => {
+      const before = loadAppWithProgram(programId, PRE_FEATURE);
+      const after = loadAppWithProgram(programId);
+      assert.deepEqual(plain(before.BUILT_IN_PROGRAMS), plain(after.BUILT_IN_PROGRAMS),
+        'the bundled Programs are untouched, so the comparison is like for like');
+      after.DAYS.forEach(day => fn(before, after, day, (programId || 'ppl') + '/' + day.id));
+    });
+  }
+
+  test('scores identically, Day for Day', { skip: SKIP_PRE_FEATURE }, () => {
+    let scored = 0;
+    eachDay((before, after, day, where) => {
+      const was = plain(before.computeScore(logEverything(before, day.id)));
+      const is = plain(after.computeScore(logEverything(after, day.id)));
+      assert.deepEqual(is, was, where + ' scores differently than it did before the feature');
+      if (is.total > 0) scored++;
+    });
+    assert.ok(scored >= 7, 'the comparison ran against Days that actually score');
+  });
+
+  test('carries the same Movement names, schemes and targets', { skip: SKIP_PRE_FEATURE }, () => {
+    let movements = 0;
+    eachDay((before, after, day, where) => {
+      const was = movementFacts(logEverything(before, day.id));
+      const is = movementFacts(logEverything(after, day.id));
+      assert.deepEqual(is, was, where + ' prescribes something different than it did before');
+      movements += Object.keys(was.primaries).length + Object.keys(was.ar7).length +
+                   Object.keys(was.accessories).length;
+    });
+    assert.ok(movements > 50, 'the comparison covered the Movements of both Programs');
+  });
+
+  test('shows every Movement session mode used to show', { skip: SKIP_PRE_FEATURE }, () => {
+    // The markup differs by design, so this asks the weaker but still
+    // meaningful question: has anything the old build put on screen stopped
+    // appearing. Both sides are entity-decoded first, because the feature
+    // also started escaping Program text that was interpolated raw before —
+    // a note reading "a DB fly can't" now reaches innerHTML as "can&#39;t",
+    // which renders the same and is the fix, not a loss.
+    const decode = html => html
+      .replace(/&#39;/g, String.fromCharCode(39))
+      .replace(/&quot;/g, String.fromCharCode(34))
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const renderDay = (app, day) => {
+      app.session = logEverything(app, day.id);
+      app.activeDay = day.id;
+      app.renderSessionMode(day);
+      return decode(app.document.getElementById('content').innerHTML);
+    };
+
+    eachDay((before, after, day, where) => {
+      if (!day.sections) return;
+      const was = renderDay(before, day);
+      const is = renderDay(after, day);
+      day.sections.forEach(sec => {
+        if (after.classifySection(sec) === 'skip') return;
+        (sec.items || []).forEach(item => {
+          if (was.includes(item.name)) {
+            assert.ok(is.includes(item.name),
+              where + ': ' + item.name + ' no longer reaches the screen');
+          }
+          if (item.sets && was.includes(item.sets)) {
+            assert.ok(is.includes(item.sets),
+              where + ': the scheme ' + item.sets + ' no longer reaches the screen');
+          }
+        });
+      });
+    });
+  });
+});
