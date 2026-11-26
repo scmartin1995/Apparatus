@@ -2502,23 +2502,42 @@ function applyScheme(entry, cat, numSets, repLow, repHigh) {
 // the snapshot alone — but the key encodes the position, so the Day still can.
 //
 // This is the ONE place a snapshot key is resolved to its prescribed Movement.
-// When the effective-Day resolver lands, the DAYS lookup below becomes the
-// resolved Day and nothing else changes: reverting a day-only Substitution made
-// on top of a Permanent Substitution has to give back the permanent substitute,
-// not the Program's original. Scattered across call sites, that lookup would
-// get it wrong quietly.
+// Scattered across call sites, that lookup would get it wrong quietly — and it
+// has two cases to tell apart, both of them real:
+//
+//   - A day-only Substitution made on top of a Permanent one. The effective Day
+//     prescribes the permanent substitute, and that is what the lifter was
+//     shown when the Session started, so the revert has to land there and not
+//     on the Movement the Program ships.
+//   - A Substitution marked permanent during this very Session. Ticking the box
+//     writes the override straight away, so by the time a revert runs the
+//     effective Day already resolves this position to the substitute itself —
+//     going back to that would be a destructive no-op. Here the lifter is going
+//     back to the Program's Movement, and the raw Day is the only place left
+//     holding it.
+//
+// `substitutedFor` records what was replaced and is right in both cases, so the
+// item wanted is the one at this position whose name matches it: the effective
+// Day's where that holds, the raw Day's otherwise.
 function prescribedItemFor(cat, key) {
   if (!session) return null;
-  // The effective Day, not the raw one: a Permanent Substitution is what this
-  // Day prescribes now, so reverting a day-only Substitution made on top of one
-  // gives back the permanent substitute rather than the Program's Movement —
-  // which is what the lifter was shown when the Session started.
-  const day = effectiveDay(DAYS.find(d => d.id === session.dayType));
-  if (!day || !day.sections) return null;
+  const raw = DAYS.find(d => d.id === session.dayType);
+  if (!raw) return null;
   const parts = String(key).split('-');
-  const sec = day.sections[parseInt(parts[0], 10)];
-  if (!sec || !sec.items || classifySection(sec) !== cat) return null;
-  return sec.items[parseInt(parts[1], 10)] || null;
+  // Position and Section kind are checked against whichever Day is read, so a
+  // position the Day no longer prescribes still resolves to nothing rather than
+  // to its neighbour.
+  const itemIn = day => {
+    if (!day || !day.sections) return null;
+    const sec = day.sections[parseInt(parts[0], 10)];
+    if (!sec || !sec.items || classifySection(sec) !== cat) return null;
+    return sec.items[parseInt(parts[1], 10)] || null;
+  };
+  const effective = itemIn(effectiveDay(raw));
+  const entry = entryFor(cat, key);
+  const replaced = entry && entry.substitutedFor;
+  if (!replaced || (effective && effective.name === replaced)) return effective;
+  return itemIn(raw) || effective;
 }
 // What reverting would cost: only the values logged against the substitute
 // count. A revert with nothing filled in throws nothing away and is not worth
@@ -3309,7 +3328,11 @@ function revertSubstitution() {
   // The Day no longer prescribes anything in this position, so there is nothing
   // to go back to. Leave the Substitution standing rather than guess at one.
   if (!item) { setSubHint('This Movement is no longer in the Day, so there is nothing to go back to.', true); return; }
-  // Reverting discards logged work, so say what it costs before doing it.
+  // Reverting discards logged work, so say what it costs before doing it. The
+  // Movement being gone back to is the item's name, never the entry's: those
+  // two read the same whenever the lookup resolves a Substitution to itself,
+  // and a sentence naming the substitute on both sides tells the lifter they
+  // are going back to what they are already doing.
   const logged = loggedValuesIn(entry);
   if (logged > 0 && !confirm('Going back to ' + item.name + ' clears the ' +
       (logged === 1 ? 'value' : logged + ' values') + ' you logged against ' + entry.name + '. Continue?')) {

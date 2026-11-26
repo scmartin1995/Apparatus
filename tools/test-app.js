@@ -4316,3 +4316,141 @@ describe('a Session with no Substitutions, against the build before the feature'
     });
   });
 });
+
+// ── REVERTING A SUBSTITUTION MARKED PERMANENT IN-SESSION ───
+// Ticking the permanent box writes the override there and then, so for the rest
+// of that Session the Day already prescribes the substitute. A revert resolved
+// through the effective Day alone therefore lands on the substitute itself: the
+// SUBSTITUTED marker goes, the logged work goes, and the lifter is still doing
+// the workaround with no way back. These cover the other side of the one lookup
+// the section above pins down.
+describe('reverting a Substitution marked permanent during the Session', () => {
+  test('lands on the Movement the Program prescribes, not on the substitute the override already resolves to', () => {
+    const app = loadAppWithProgram(PPL);
+    const m = boundLift(app);
+    assert.ok(m, 'a Movement is bound to a Baseline');
+    assert.ok(m.item.baselineId, 'the Program binds it to a Lift');
+    // Read off the Program, so the test states what it is distinguishing from
+    // rather than repeating a scheme string that could drift.
+    const prescribed = { name: m.item.name, sets: m.item.sets, baselineId: m.item.baselineId };
+
+    const s = startOn(app, m.day);
+    assert.ok(substitutePermanently(app, m.cat, m.key, 'Seal Row', { sets: 4, repLow: 6, repHigh: 8 }),
+      'the Substitution was made and marked permanent');
+    const storedScheme = plain(app.loadOverrides())[m.day.id][prescribed.name].sets;
+    assert.notEqual(storedScheme, prescribed.sets,
+      'the Permanent Substitution carries a scheme of its own, so the two are tellable apart');
+    logSomething(m.cat, entryIn(s, m.cat, m.key));
+
+    app.answerConfirm(true);
+    assert.ok(revertVia(app, m.cat, m.key), 'the revert went through');
+
+    const back = entryIn(s, m.cat, m.key);
+    assert.equal(back.name, prescribed.name,
+      'the decision made minutes ago must not stand between the lifter and the Program');
+    assert.equal(back.setsStr, prescribed.sets, 'with the Program’s scheme, not the override’s');
+    assert.equal(back.baselineId, prescribed.baselineId,
+      'and bound to the Lift again, so the working range drawn from its 1RM reappears');
+    assert.equal(back.substitutedFor, null, 'nothing stands in for anything any more');
+    assert.equal(app.loggedValuesIn(back), 0,
+      'the logged work went with the substitute it was done against');
+  });
+
+  test('asks about the logged work by naming the Movement being gone back to, so the question is not a no-op', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const prescribed = m.name;
+
+    const s = startOn(app, day);
+    assert.ok(substitutePermanently(app, m.cat, m.key, 'Seal Row'), 'the Substitution was made');
+    // One set only, so the singular half of the sentence is the half under test.
+    const logged = entryIn(s, m.cat, m.key);
+    logged.sets[0].weight = '185'; logged.sets[0].reps = '8';
+
+    const askedBefore = app.confirmsAsked().length;
+    app.answerConfirm(true);
+    assert.ok(revertVia(app, m.cat, m.key), 'the revert went through');
+    assert.equal(app.confirmsAsked().length, askedBefore + 1, 'the lifter was asked once');
+
+    const asked = app.lastConfirm();
+    assert.ok(asked.includes('Going back to ' + prescribed),
+      'the question names where the revert lands: ' + asked);
+    assert.ok(!asked.includes('Going back to Seal Row'),
+      'and never offers to go back to the Movement the lifter is already doing: ' + asked);
+    assert.ok(asked.includes('you logged against Seal Row'),
+      'while still naming the substitute the work was done against: ' + asked);
+    assert.ok(asked.includes('clears the value '), 'one logged set is one value: ' + asked);
+  });
+
+  test('counts the logged work it would discard rather than calling it one value', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+
+    const s = startOn(app, day);
+    assert.ok(substitutePermanently(app, m.cat, m.key, 'Seal Row', { sets: 3, repLow: 8, repHigh: 10 }));
+    fillSets(entryIn(s, m.cat, m.key), 185, 8);
+
+    app.answerConfirm(false);
+    assert.equal(revertVia(app, m.cat, m.key), false, 'backing out left the Substitution standing');
+    assert.ok(app.lastConfirm().includes('clears the 3 values'),
+      'three logged sets are three values: ' + app.lastConfirm());
+    assert.equal(entryIn(s, m.cat, m.key).name, 'Seal Row', 'and nothing was thrown away');
+  });
+
+  // Deliberate: the override is left standing. Reverting today’s logging says
+  // the machine freed up, not that the lifter has changed their mind about what
+  // this Day prescribes — undoing a Permanent Substitution is its own action,
+  // on the Program view. A revert that quietly cleared the store would also
+  // leave the lifter no way to tell the two reverts apart.
+  test('leaves the Permanent Substitution standing, because going back today is not undoing a settled decision', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+
+    const s = startOn(app, day);
+    assert.ok(substitutePermanently(app, m.cat, m.key, 'Seal Row', { sets: 4, repLow: 6, repHigh: 8 }));
+    const storeAfterDeciding = plain(app.readOverrideMap());
+    logSomething(m.cat, entryIn(s, m.cat, m.key));
+
+    app.answerConfirm(true);
+    assert.ok(revertVia(app, m.cat, m.key), 'the revert went through');
+
+    assert.deepEqual(plain(app.readOverrideMap()), storeAfterDeciding,
+      'the override store is untouched by a revert inside the Session');
+    assert.equal(app.initSession(day.id).primaries[m.key].name, 'Seal Row',
+      'so the next Session of that Day still starts on the Permanent Substitution');
+    assert.equal(app.initSession(day.id).primaries[m.key].setsStr, '4 × 6–8',
+      'with the scheme it was recorded with');
+  });
+
+  test('a day-only Substitution made on top of a Permanent one still lands on the permanent substitute', () => {
+    const app = loadApp();
+    importTwoDayProgram(app);
+    const day = app.DAYS[0];
+    const prescribed = day.sections[0].items[0].name;
+
+    startOn(app, day);
+    assert.ok(substitutePermanently(app, 'primary', '0-0', 'Belt Squat',
+      { sets: 4, repLow: 6, repHigh: 8 }), 'the Permanent Substitution was made');
+    const stored = plain(app.loadOverrides())[day.id][prescribed];
+
+    // A new Session, so the permanent substitute is what the Day prescribes
+    // now and what the lifter was shown when they started.
+    const s = startOn(app, day);
+    assert.ok(substituteVia(app, 'primary', '0-0', 'Goblet Squat'), 'and today it is busy too');
+    logSomething('primary', entryIn(s, 'primary', '0-0'));
+
+    app.answerConfirm(true);
+    assert.ok(revertVia(app, 'primary', '0-0'), 'the revert went through');
+
+    const back = entryIn(s, 'primary', '0-0');
+    assert.equal(back.name, stored.name,
+      'back to what the lifter was shown when the Session started');
+    assert.notEqual(back.name, prescribed,
+      'reading the raw Day here would reach past the settled decision to the Program');
+    assert.equal(back.setsStr, stored.sets, 'with the scheme the decision was stored with');
+    assert.equal(back.substitutedFor, null);
+  });
+});
