@@ -325,6 +325,21 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .weight-hint-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: rgba(202,253,0,0.08); border: 1px solid rgba(202,253,0,0.2); color: var(--c-primary-ctr); padding: 3px 8px; border-radius: 4px; }
 .weight-hint-label { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
 .weight-hint-source { font-family: var(--font-b); font-size: 0.5625rem; color: var(--c-on-surface-v); opacity: 0.5; }
+/* Substitutions read in secondary, so a swapped Movement never reads as a
+   prescribed load, which is what the primary green means everywhere else. */
+.sub-swap { flex: 0 0 auto; width: 1.75rem; height: 1.75rem; margin: -2px -4px 0 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; color: var(--c-on-surface-v); transition: background 0.2s, color 0.2s; }
+.sub-swap:hover { background: var(--c-surface-top); color: var(--c-secondary); }
+.sub-swap.active { color: var(--c-secondary); }
+.sub-swap .mi { font-size: 1rem; }
+.sub-marker { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.sub-marker-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: rgba(0,227,253,0.08); border: 1px solid rgba(0,227,253,0.25); color: var(--c-secondary); padding: 3px 8px; border-radius: 4px; }
+.sub-marker-label { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
+.sub-marker-label strong { color: var(--c-on-surface); font-weight: 600; }
+.input-field-text { font-size: 1rem; letter-spacing: -0.01em; }
+.input-field-sm { padding: 0.75rem 0.5rem; font-size: 1.125rem; text-align: center; }
+.sub-scheme { grid-template-columns: repeat(3, 1fr); margin-top: 1rem; }
+.sub-scheme.no-sets { grid-template-columns: repeat(2, 1fr); }
+.modal-error { color: var(--c-error); }
 .log-ar7 { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .log-ar7-label { font-family: var(--font-h); font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); }
 .log-ar7-dots { display: flex; gap: 6px; flex: 1; min-width: 140px; }
@@ -599,6 +614,26 @@ body.session-active .bottomnav { display: none; }
     <p class="modal-preview" id="modalOrmPreview">Enter weight + reps to estimate 1RM</p>
     <button id="modalSaveBtn" class="btn-save">Save</button>
     <button id="modalResetBtn" class="btn-ghost">Reset to Default</button>
+  </div>
+</div>
+
+<!-- SUBSTITUTE MOVEMENT -->
+<div class="modal-overlay" id="substituteModal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="modal-eyebrow">Substitute Movement</span>
+      <button id="subCancelBtn" class="modal-close"><span class="mi mi-sm">close</span></button>
+    </div>
+    <div class="modal-lift-name" id="subPrescribedName"></div>
+    <label class="input-label" for="subNameInput">Doing instead</label>
+    <input id="subNameInput" type="text" class="input-field input-field-text" placeholder="Whatever you are actually doing" maxlength="60" autocomplete="off" autocapitalize="words" spellcheck="false"/>
+    <div class="modal-inputs sub-scheme" id="subSchemeRow">
+      <div id="subSetsField"><label class="input-label" for="subSetsInput">Sets</label><input id="subSetsInput" type="number" inputmode="numeric" min="1" max="12" class="input-field input-field-sm"/></div>
+      <div><label class="input-label" for="subRepLowInput">Rep Low</label><input id="subRepLowInput" type="number" inputmode="numeric" min="1" class="input-field input-field-sm"/></div>
+      <div><label class="input-label" for="subRepHighInput">Rep High</label><input id="subRepHighInput" type="number" inputmode="numeric" min="1" class="input-field input-field-sm"/></div>
+    </div>
+    <p class="modal-preview" id="subModalHint"></p>
+    <button id="subSaveBtn" class="btn-save">Substitute</button>
   </div>
 </div>
 
@@ -2050,7 +2085,10 @@ function initSession(dayType) {
     sec.items.forEach((item, ii) => {
       const key = si + '-' + ii;
       const tgt = parseSetsStr(item.sets);
-      const base = { name: item.name, note: item.note || '', target: tgt, setsStr: item.sets || '' };
+      // Session mode renders from this snapshot, not from the program, so the
+      // snapshot has to carry everything the display needs — the baseline
+      // binding included, or a logged lift loses its working range.
+      const base = { name: item.name, note: item.note || '', target: tgt, setsStr: item.sets || '', baselineId: item.baselineId || null, substitutedFor: null };
       if (cat === 'primary') {
         base.sets = [];
         for (let i = 0; i < tgt.numSets; i++) base.sets.push({ weight: '', reps: '' });
@@ -2204,8 +2242,124 @@ function startSession(dayType) {
   document.getElementById('finishBar').style.display = 'flex';
   startSessionClock(); render();
 }
+// A draft saved by an older build may predate a field the snapshot now carries,
+// and session mode reads the snapshot rather than the program. Fill the gaps in
+// from the Day it was started from, so a resumed draft renders in full.
+function backfillSnapshot(s) {
+  const day = s && DAYS.find(d => d.id === s.dayType);
+  if (!day || !day.sections) return s;
+  day.sections.forEach((sec, si) => {
+    const cat = classifySection(sec);
+    if (cat === 'skip') return;
+    sec.items.forEach((item, ii) => {
+      const key = si + '-' + ii;
+      const entry = cat === 'primary' ? s.primaries[key]
+                  : cat === 'ar7'     ? s.ar7[key]
+                                      : s.accessories[key];
+      if (!entry) return;
+      if (entry.name === undefined)       entry.name = item.name;
+      if (entry.note === undefined)       entry.note = item.note || '';
+      if (entry.setsStr === undefined)    entry.setsStr = item.sets || '';
+      if (entry.target === undefined)     entry.target = parseSetsStr(item.sets);
+      if (entry.baselineId === undefined) entry.baselineId = item.baselineId || null;
+      if (entry.substitutedFor === undefined) entry.substitutedFor = null;
+    });
+  });
+  return s;
+}
+
+// ── SUBSTITUTIONS ──────────────────────────────────────────
+// A Substitution is session-local: it edits the Session snapshot and travels
+// into the Session record, and never touches the Program. Free text by design —
+// no preset list, no autocomplete, no matching against known Movements.
+const SUB_NAME_MAX = 60;
+let substituting = null;
+
+function entryFor(cat, key) {
+  if (!session) return null;
+  const group = cat === 'primary' ? session.primaries
+              : cat === 'ar7'     ? session.ar7
+                                  : session.accessories;
+  return group[key] || null;
+}
+// Replaces what the lifter logs against. The baseline binding goes with it:
+// keeping it would prescribe a barbell load for a dumbbell movement.
+function substituteEntry(entry, rawName) {
+  const name = String(rawName || '').trim().slice(0, SUB_NAME_MAX);
+  if (!name) return false;
+  // Records what was replaced in the Day the lifter was looking at, so
+  // substituting twice over still points at what the Program asked for.
+  if (!entry.substitutedFor) entry.substitutedFor = entry.name;
+  entry.name = name;
+  entry.baselineId = null;
+  return true;
+}
+
+// AR-7 writes its scheme as "6–8 reps" and has no set count, so its rep range
+// lives in the string rather than in the parsed target (which AR-7 scoring
+// never reads). Everything else writes "3 × 8–10", sometimes with a qualifier
+// after it.
+const AR7_REPS_RE = /^(\s*)(\d+)(?:\s*[–—-]\s*(\d+))?/;
+const SETS_REPS_RE = /^(\s*)(\d+)(\s*[×x]\s*)(\d+)(?:(\s*[–—-]\s*)(\d+))?/;
+const SUB_SETS_MAX = 12;
+const SUB_REPS_MAX = 100;
+
+function repRangeOf(entry, cat) {
+  if (cat === 'ar7') {
+    const m = AR7_REPS_RE.exec(entry.setsStr || '');
+    if (m) {
+      const lo = parseInt(m[2]);
+      return { repLow: lo, repHigh: m[3] ? parseInt(m[3]) : lo };
+    }
+  }
+  const t = entry.target || { repLow: 1, repHigh: 1 };
+  return { repLow: t.repLow, repHigh: t.repHigh };
+}
+function fmtRange(lo, hi) { return lo === hi ? String(lo) : lo + '–' + hi; }
+// Rewrites the numbers in a scheme and leaves the rest of the line alone, so a
+// "/ side" or a load note survives a change the lifter did not ask for.
+function rewriteScheme(original, cat, numSets, repLow, repHigh) {
+  const str = String(original || '');
+  if (cat === 'ar7') {
+    const m = AR7_REPS_RE.exec(str);
+    if (m) return m[1] + fmtRange(repLow, repHigh) + str.slice(m[0].length);
+    return fmtRange(repLow, repHigh) + ' reps';
+  }
+  const m = SETS_REPS_RE.exec(str);
+  if (m) return m[1] + numSets + m[3] + fmtRange(repLow, repHigh) + str.slice(m[0].length);
+  return numSets + ' × ' + fmtRange(repLow, repHigh);
+}
+
+// How many sets already carry logged work beyond a proposed new count. A
+// reduction past these would throw away work the lifter has done.
+function setsLostBy(entry, numSets) {
+  if (!entry.sets) return 0;
+  return entry.sets.slice(numSets).filter(s => s && (s.weight || s.reps)).length;
+}
+// Rebuilds the set array to the new count, keeping logged values by index as
+// far as they fit. scoreAccessory divides by set count, so this is a
+// scoring-relevant edit, not only a display one.
+function resizeSets(entry, numSets) {
+  if (!entry.sets) return;
+  const next = [];
+  for (let i = 0; i < numSets; i++) {
+    next.push(entry.sets[i] ? { weight: entry.sets[i].weight || '', reps: entry.sets[i].reps || '' }
+                            : { weight: '', reps: '' });
+  }
+  entry.sets = next;
+}
+// Applies a scheme the lifter set. AR-7 keeps seven rounds and has no sets, so
+// only its rep range moves.
+function applyScheme(entry, cat, numSets, repLow, repHigh) {
+  entry.target = {
+    numSets: cat === 'ar7' ? (entry.target ? entry.target.numSets : 1) : numSets,
+    repLow: repLow, repHigh: repHigh,
+  };
+  entry.setsStr = rewriteScheme(entry.setsStr, cat, numSets, repLow, repHigh);
+  if (cat !== 'ar7') resizeSets(entry, numSets);
+}
 function resumeSession(draftData) {
-  session = draftData;
+  session = backfillSnapshot(draftData);
   document.body.classList.add('session-active');
   document.getElementById('finishBar').style.display = 'flex';
   activeDay = session.dayType; startSessionClock(); render();
@@ -2290,12 +2444,25 @@ function renderSessionMode(day) {
     let itemsHtml = '';
     sec.items.forEach((item, ii) => {
       const key = si + '-' + ii;
-      const noteHtml = item.note ? '<div class="log-item-note">' + item.note + '</div>' : '';
-      const targetHtml = '<div class="log-item-target">Target: <strong>' + (displaySets(item)||'').replace(/"/g,'&quot;') + '</strong></div>';
-      const header = '<div class="log-item-header"><div class="log-item-name">' + item.name + '</div></div>' + targetHtml;
+      // Everything shown here comes from the Session snapshot, never from the
+      // program: what the lifter is logging against is what they should see.
+      const entry = cat === 'primary' ? session.primaries[key]
+                  : cat === 'ar7'     ? session.ar7[key]
+                                      : session.accessories[key];
+      if (!entry) return;
+      const isSub = !!entry.substitutedFor;
+      const noteHtml = entry.note ? '<div class="log-item-note">' + escHtml(entry.note) + '</div>' : '';
+      const targetHtml = '<div class="log-item-target">Target: <strong>' + escHtml(displaySets(snapshotAsMovement(entry))||'') + '</strong></div>';
+      const swapHtml = '<button class="sub-swap' + (isSub ? ' active' : '') + '" title="Substitute this Movement" onclick="openSubstituteModal(\'' + cat + '\',\'' + key + '\')"><span class="mi">swap_horiz</span></button>';
+      const header = '<div class="log-item-header"><div class="log-item-name">' + escHtml(entry.name) + '</div>' + swapHtml + '</div>' + targetHtml;
+      // Always say what the Program asked for, so a Substitution never reads as
+      // the Program having changed on its own.
+      const subHtml = isSub
+        ? '<div class="sub-marker"><span class="sub-marker-badge">Substituted</span><span class="sub-marker-label">replaces <strong>' + escHtml(entry.substitutedFor) + '</strong></span></div>'
+        : '';
       if (cat === 'primary') {
-        const p = session.primaries[key]; if (!p) return;
-        const hintHtml = weightHintHtml(item.name, item.sets, item.baselineId);
+        const p = entry;
+        const hintHtml = weightHintHtml(p.name, p.setsStr, p.baselineId);
         let setsHtml = '';
         p.sets.forEach((set, idx) => {
           setsHtml += '<div class="log-set-row"><span class="log-set-num">S' + (idx+1) + '</span>' +
@@ -2304,17 +2471,17 @@ function renderSessionMode(day) {
             '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updatePrimarySet(\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
             '</div>';
         });
-        itemsHtml += '<div class="log-item">' + header + noteHtml + hintHtml + '<div class="log-sets">' + setsHtml + '</div></div>';
+        itemsHtml += '<div class="log-item">' + header + subHtml + noteHtml + hintHtml + '<div class="log-sets">' + setsHtml + '</div></div>';
       } else if (cat === 'ar7') {
-        const a = session.ar7[key]; if (!a) return;
+        const a = entry;
         let dotsHtml = '';
         for (let r = 0; r < 7; r++) dotsHtml += '<button class="log-ar7-dot ' + (r < a.rounds ? 'done' : '') + '" onclick="toggleAr7Round(\'' + key + '\',' + r + ')"></button>';
         const weightHtml = '<div class="log-set-row" style="margin-top:4px"><span class="log-set-num">LOAD</span><input class="log-input ' + (a.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="lb" value="' + (a.weight||'') + '" oninput="updateAr7Weight(\'' + key + '\',this.value)" style="flex:0 0 90px"/><span class="log-input-x" style="font-size:0.625rem">lb</span></div>';
         const ar7Html = '<div class="log-ar7"><span class="log-ar7-label">Rounds</span><div class="log-ar7-dots">' + dotsHtml + '</div><span class="log-ar7-count">' + a.rounds + '/7</span></div>';
-        itemsHtml += '<div class="log-item">' + header + noteHtml + weightHtml + ar7Html + '</div>';
+        itemsHtml += '<div class="log-item">' + header + subHtml + noteHtml + weightHtml + ar7Html + '</div>';
       } else {
-        const acc = session.accessories[key]; if (!acc) return;
-        const accHint = getSuggestedWeight(item.name, item.sets, item.baselineId);
+        const acc = entry;
+        const accHint = getSuggestedWeight(acc.name, acc.setsStr, acc.baselineId);
         const accHintHtml = accHint ? '<div class="weight-hint"><span class="weight-hint-badge">~' + accHint.weight + ' lb</span><span class="weight-hint-label">suggested</span><span class="weight-hint-source">' + (accHint.source==='baseline'?'from 1RM':'last session') + '</span></div>' : '';
         let setsHtml = '';
         acc.sets.forEach((set, idx) => {
@@ -2327,7 +2494,7 @@ function renderSessionMode(day) {
         let rpeDots = '';
         for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" onclick="setAccessoryRpe(\'' + key + '\',' + r + ')">' + r + '</button>';
         const rpeHtml = '<div class="log-rpe"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div>';
-        itemsHtml += '<div class="log-item">' + header + noteHtml + accHintHtml + '<div class="log-sets">' + setsHtml + '</div>' + rpeHtml + '</div>';
+        itemsHtml += '<div class="log-item">' + header + subHtml + noteHtml + accHintHtml + '<div class="log-sets">' + setsHtml + '</div>' + rpeHtml + '</div>';
       }
     });
     bodyHtml += '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '>' +
@@ -2652,6 +2819,90 @@ function openBaselineModal(id) {
   setTimeout(() => document.getElementById('modalWeight').focus(), 300);
 }
 function closeBaselineModal() { document.getElementById('baselineModal').classList.remove('open'); editingBaselineId = null; }
+
+// ── SUBSTITUTE MODAL ───────────────────────────────────────
+function setSubHint(text, isError) {
+  const el = document.getElementById('subModalHint');
+  el.textContent = text;
+  el.classList.toggle('modal-error', !!isError);
+}
+window.openSubstituteModal = function(cat, key) {
+  const entry = entryFor(cat, key);
+  if (!entry) return;
+  substituting = { cat, key };
+  // What the lifter is replacing: the prescribed Movement, still, when they are
+  // correcting a Substitution they already made.
+  const replacing = entry.substitutedFor || entry.name;
+  document.getElementById('subPrescribedName').textContent = replacing;
+  const input = document.getElementById('subNameInput');
+  input.value = entry.substitutedFor ? entry.name : '';
+  input.maxLength = SUB_NAME_MAX;
+
+  // The scheme starts where the Program left it, so keeping it takes no effort.
+  const range = repRangeOf(entry, cat);
+  const isAr7 = cat === 'ar7';
+  document.getElementById('subSetsInput').value = entry.sets ? entry.sets.length : (entry.target ? entry.target.numSets : 1);
+  document.getElementById('subRepLowInput').value = range.repLow;
+  document.getElementById('subRepHighInput').value = range.repHigh;
+  // AR-7 is seven rounds in both the renderer and the scorer, so it has no set
+  // count to offer.
+  document.getElementById('subSetsField').style.display = isAr7 ? 'none' : '';
+  document.getElementById('subSchemeRow').classList.toggle('no-sets', isAr7);
+
+  setSubHint('Scored exactly as ' + replacing + ' would have been. Your Program is unchanged.');
+  document.getElementById('substituteModal').classList.add('open');
+  setTimeout(() => { try { input.focus(); } catch(e) {} }, 50);
+};
+function closeSubstituteModal() {
+  document.getElementById('substituteModal').classList.remove('open');
+  substituting = null;
+}
+function readSchemeFields(cat, entry) {
+  const whole = el => {
+    const n = parseInt(document.getElementById(el).value, 10);
+    return (isFinite(n) && n > 0) ? n : null;
+  };
+  const numSets = cat === 'ar7' ? (entry.target ? entry.target.numSets : 1) : whole('subSetsInput');
+  const repLow = whole('subRepLowInput');
+  let repHigh = whole('subRepHighInput');
+  if (numSets === null) return { error: 'Sets must be a whole number, 1 or more.' };
+  if (repLow === null || repHigh === null) return { error: 'Reps must be whole numbers, 1 or more.' };
+  if (numSets > SUB_SETS_MAX) return { error: 'That is more than ' + SUB_SETS_MAX + ' sets.' };
+  if (repLow > SUB_REPS_MAX || repHigh > SUB_REPS_MAX) return { error: 'That is more than ' + SUB_REPS_MAX + ' reps.' };
+  // A range entered backwards is taken as a single number rather than refused.
+  if (repHigh < repLow) repHigh = repLow;
+  return { numSets: numSets, repLow: repLow, repHigh: repHigh };
+}
+function saveSubstitution() {
+  if (!substituting) return closeSubstituteModal();
+  const cat = substituting.cat;
+  const entry = entryFor(cat, substituting.key);
+  if (!entry) return closeSubstituteModal();
+  const input = document.getElementById('subNameInput');
+
+  const scheme = readSchemeFields(cat, entry);
+  if (scheme.error) { setSubHint(scheme.error, true); return; }
+
+  const name = String(input.value || '').trim();
+  if (!name) {
+    setSubHint('Type what you are doing instead.', true);
+    try { input.focus(); } catch(e) {}
+    return;
+  }
+  // Cutting sets throws away logged work, so say so before doing it.
+  const lost = setsLostBy(entry, scheme.numSets);
+  if (lost > 0 && !confirm('Dropping to ' + scheme.numSets + (scheme.numSets === 1 ? ' set' : ' sets') +
+      ' discards ' + lost + (lost === 1 ? ' set you have already logged.' : ' sets you have already logged.') +
+      ' Continue?')) {
+    setSubHint('Left as it was. Nothing was changed.');
+    return;
+  }
+
+  substituteEntry(entry, name);
+  applyScheme(entry, cat, scheme.numSets, scheme.repLow, scheme.repHigh);
+  closeSubstituteModal();
+  saveDraft(); render();
+}
 function updateModalPreview() {
   const w = parseFloat(document.getElementById('modalWeight').value), r = parseInt(document.getElementById('modalReps').value);
   const p = document.getElementById('modalOrmPreview');
@@ -3029,6 +3280,19 @@ function displaySets(item, baselines) {
   const b = baselineFor(item, baselines);
   return b ? item.sets + ' @ ' + workingRange(b.orm, b.pctLow, b.pctHigh) : item.sets;
 }
+// A Session snapshot calls the prescribed scheme `setsStr`, because `sets`
+// holds the logged work. The helpers above were written against a program
+// Movement, so session mode reads its snapshot through here.
+function snapshotAsMovement(entry) {
+  return { name: entry.name, sets: entry.setsStr, baselineId: entry.baselineId };
+}
+// Movement names reach the screen as HTML, and a substitute's name is typed by
+// the lifter, so it cannot be trusted to be plain text.
+function escHtml(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 function workingRange(orm, lo, hi) { const a=Math.round(orm*lo/2.5)*2.5, b=Math.round(orm*hi/2.5)*2.5; return a===b ? a+' lb' : a+'\u2013'+b+' lb'; }
 function fmtTime(s) { const m=Math.floor(s/60),sec=s%60; return m+':'+(sec<10?'0':'')+sec; }
 function calculate() {
@@ -3137,6 +3401,10 @@ document.getElementById('modalSaveBtn').addEventListener('click', saveBaseline);
 document.getElementById('modalCancelBtn').addEventListener('click', closeBaselineModal);
 document.getElementById('modalResetBtn').addEventListener('click', resetBaseline);
 document.getElementById('baselineModal').addEventListener('click', e => { if(e.target===document.getElementById('baselineModal')) closeBaselineModal(); });
+document.getElementById('subSaveBtn').addEventListener('click', saveSubstitution);
+document.getElementById('subCancelBtn').addEventListener('click', closeSubstituteModal);
+document.getElementById('substituteModal').addEventListener('click', e => { if(e.target===document.getElementById('substituteModal')) closeSubstituteModal(); });
+document.getElementById('subNameInput').addEventListener('keyup', e => { if(e.key==='Enter') saveSubstitution(); });
 document.getElementById('modalWeight').addEventListener('input', updateModalPreview);
 document.getElementById('modalReps').addEventListener('input', updateModalPreview);
 document.getElementById('modalWeight').addEventListener('keyup', e => { if(e.key==='Enter') saveBaseline(); });
@@ -3149,6 +3417,7 @@ document.addEventListener('keydown', e => {
   if (document.getElementById('importPage').classList.contains('open')) { closeImportPage(); return; }
   if (document.getElementById('strengthPage').classList.contains('open')) { closeStrengthPage(); return; }
   if (document.getElementById('progPage').classList.contains('open')) { closeProgPage(); return; }
+  if (document.getElementById('substituteModal').classList.contains('open')) { closeSubstituteModal(); return; }
   if (document.getElementById('baselineModal').classList.contains('open')) { closeBaselineModal(); return; }
 });
 let scrollTimer = null;
