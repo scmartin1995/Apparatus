@@ -339,6 +339,9 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .input-field-sm { padding: 0.75rem 0.5rem; font-size: 1.125rem; text-align: center; }
 .sub-scheme { grid-template-columns: repeat(3, 1fr); margin-top: 1rem; }
 .sub-scheme.no-sets { grid-template-columns: repeat(2, 1fr); }
+.sub-permanent { display: flex; align-items: flex-start; gap: 10px; margin-top: 1rem; padding: 0.75rem 0; cursor: pointer; }
+.sub-permanent input { flex: 0 0 22px; width: 22px; height: 22px; margin: 0; accent-color: var(--c-secondary); }
+.sub-permanent span { font-family: var(--font-b); font-size: 0.75rem; line-height: 1.5; color: var(--c-on-surface-v); }
 .modal-error { color: var(--c-error); }
 .log-ar7 { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .log-ar7-label { font-family: var(--font-h); font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); }
@@ -632,6 +635,7 @@ body.session-active .bottomnav { display: none; }
       <div><label class="input-label" for="subRepLowInput">Rep Low</label><input id="subRepLowInput" type="number" inputmode="numeric" min="1" class="input-field input-field-sm"/></div>
       <div><label class="input-label" for="subRepHighInput">Rep High</label><input id="subRepHighInput" type="number" inputmode="numeric" min="1" class="input-field input-field-sm"/></div>
     </div>
+    <label class="sub-permanent" for="subPermanentInput"><input id="subPermanentInput" type="checkbox"/><span>Make it permanent &mdash; stand in for this Movement in future Sessions of this Day too. Your Program is not edited.</span></label>
     <p class="modal-preview" id="subModalHint"></p>
     <button id="subSaveBtn" class="btn-save">Substitute</button>
   </div>
@@ -703,6 +707,7 @@ const LS_SESSIONS  = 'apparatus_sessions';
 const LS_DRAFT     = 'apparatus_draft';
 const LS_NUDGE     = 'apparatus_nudge_';
 const LS_BUILTIN   = 'apparatus_builtin';
+const LS_OVERRIDES = 'apparatus_overrides';
 const SESSION_CAP  = 32;
 
 // ── BUILT-IN PROGRAMS ─────────────────────────────────────────
@@ -1840,7 +1845,9 @@ function saveProgram(p) {
   try { localStorage.setItem(LS_PROGRAM, JSON.stringify(p)); } catch(e) {}
 }
 function clearProgram() {
-  // Drops the imported override only; baselines stay keyed per program.
+  // Drops the imported program only; baselines and Permanent Substitution
+  // overrides stay keyed per program, so dropping an import discards nothing
+  // else the lifter decided.
   try { localStorage.removeItem(LS_PROGRAM); } catch(e) {}
   initProgramState();
 }
@@ -2058,6 +2065,94 @@ function saveBaselines(data) {
   } catch(e) {}
 }
 
+// ── PERMANENT SUBSTITUTION OVERRIDES ───────────────────────
+// A Permanent Substitution has to outlive the Session that made it, so it
+// persists here rather than in the Program. The store is
+// { [programId]: { [dayId]: { [prescribedName]: { name, sets } } } } under its
+// own key — the shape Baselines already use: kept per Program so switching
+// between a Built-In and an imported one mixes nothing up, and applied on top
+// of a Day at read time so the Program definition is never written to.
+//
+// Keyed by Day rather than by Movement name alone, because Movements repeat
+// across Days and a global key would reach Days the lifter never meant to
+// change. Keyed by the prescribed Movement's *name* rather than its position,
+// so an override for a Movement a Day no longer prescribes goes inert instead
+// of landing on its neighbour. Rationale and the rejected alternative are in
+// docs/adr/0001-permanent-substitutions-as-an-override-layer.md.
+function readOverrideMap() {
+  try {
+    const stored = localStorage.getItem(LS_OVERRIDES);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+  } catch(e) { return {}; }
+}
+// The active Program's overrides, as { [dayId]: { [prescribedName]: entry } }.
+function loadOverrides() {
+  try {
+    const mine = readOverrideMap()[currentProgramId()];
+    return (mine && typeof mine === 'object' && !Array.isArray(mine)) ? mine : {};
+  } catch(e) { return {}; }
+}
+function saveOverrides(data) {
+  try {
+    const map = readOverrideMap();
+    map[currentProgramId()] = data;
+    localStorage.setItem(LS_OVERRIDES, JSON.stringify(map));
+  } catch(e) {}
+}
+// Records one Permanent Substitution: the Day it was made on, the prescribed
+// Movement it stands in for, and the substitute's name and scheme.
+function setOverride(dayId, prescribedName, name, setsStr) {
+  if (!dayId || !prescribedName || !name) return;
+  const data = loadOverrides();
+  if (!data[dayId] || typeof data[dayId] !== 'object') data[dayId] = {};
+  data[dayId][prescribedName] = { name: name, sets: setsStr || '' };
+  saveOverrides(data);
+}
+// The Movement the Program prescribes at a Session snapshot key. An override is
+// keyed by that, not by what the lifter is looking at — which is already the
+// substitute when they are substituting on top of a Permanent Substitution.
+function prescribedNameAt(dayId, key) {
+  const day = DAYS.find(d => d.id === dayId);
+  if (!day || !day.sections) return null;
+  const parts = String(key || '').split('-');
+  const sec = day.sections[parseInt(parts[0], 10)];
+  const item = sec && sec.items && sec.items[parseInt(parts[1], 10)];
+  return item ? item.name : null;
+}
+// The seam. Turns a Day plus the override store into an *effective* Day: the
+// same structure, with permanently substituted Movements replaced. Every
+// surface that shows or consumes a Day's Movements goes through this, because a
+// missed call site shows the lifter a Movement they do not do, with no error.
+//
+// Always returns a clone. The Day in DAYS is the Program definition, and a
+// Substitution never writes to it. Pass `overrides` to resolve against a store
+// other than the active Program's.
+function effectiveDay(day, overrides) {
+  if (!day) return day;
+  const forDay = (overrides || loadOverrides())[day.id];
+  const eff = clone(day);
+  if (!forDay || !eff.sections) return eff;
+  eff.sections.forEach(sec => {
+    (sec.items || []).forEach(item => {
+      const ov = forDay[item.name];
+      if (!ov || !ov.name) return;
+      // Labelled with what it replaced, so a Permanent Substitution never reads
+      // as the Program having changed on its own.
+      item.substitutedFor = item.name;
+      item.name = ov.name;
+      item.sets = ov.sets || item.sets;
+      // A substitute is a different exercise, so the Baseline binding stays
+      // with the prescribed Movement: carrying it over would prescribe a
+      // barbell load for a dumbbell movement. The Baseline record itself is
+      // untouched and stays on the Strength page.
+      item.baselineId = null;
+    });
+  });
+  return eff;
+}
+
 // ── DAY CLASSIFICATION ─────────────────────────────────────
 function classifySection(sec) {
   const t = (sec.type || '').toLowerCase().trim();
@@ -2076,7 +2171,9 @@ function parseSetsStr(setsStr) {
 
 // ── SESSION INIT ───────────────────────────────────────────
 function initSession(dayType) {
-  const day = DAYS.find(d => d.id === dayType);
+  // Through the resolver, so a Permanent Substitution for this Day is already
+  // in place — with its stored scheme — before the lifter logs a thing.
+  const day = effectiveDay(DAYS.find(d => d.id === dayType));
   const s = { dayType, startTime: Date.now(), primaries: {}, ar7: {}, accessories: {}, feel: null };
   if (!day || !day.sections) return s;
   day.sections.forEach((sec, si) => {
@@ -2246,7 +2343,9 @@ function startSession(dayType) {
 // and session mode reads the snapshot rather than the program. Fill the gaps in
 // from the Day it was started from, so a resumed draft renders in full.
 function backfillSnapshot(s) {
-  const day = s && DAYS.find(d => d.id === s.dayType);
+  // The effective Day, not the raw one: a resumed draft filling its gaps from
+  // the Program would disagree with a fresh Session on the same Day.
+  const day = s && effectiveDay(DAYS.find(d => d.id === s.dayType));
   if (!day || !day.sections) return s;
   day.sections.forEach((sec, si) => {
     const cat = classifySection(sec);
@@ -2849,6 +2948,10 @@ window.openSubstituteModal = function(cat, key) {
   document.getElementById('subSetsField').style.display = isAr7 ? 'none' : '';
   document.getElementById('subSchemeRow').classList.toggle('no-sets', isAr7);
 
+  // Day-only is the default: the common case is a machine that is busy right
+  // now, and that must never silently change what the Day prescribes.
+  document.getElementById('subPermanentInput').checked = false;
+
   setSubHint('Scored exactly as ' + replacing + ' would have been. Your Program is unchanged.');
   document.getElementById('substituteModal').classList.add('open');
   setTimeout(() => { try { input.focus(); } catch(e) {} }, 50);
@@ -2900,6 +3003,14 @@ function saveSubstitution() {
 
   substituteEntry(entry, name);
   applyScheme(entry, cat, scheme.numSets, scheme.repLow, scheme.repHigh);
+  // Marked permanent: recorded against the Movement the Program prescribes on
+  // this Day, so every future Session of that Day starts with it in place. A
+  // day-only Substitution writes nothing, which is what leaves a Permanent
+  // Substitution underneath it intact.
+  if (session && document.getElementById('subPermanentInput').checked) {
+    const prescribed = prescribedNameAt(session.dayType, substituting.key);
+    if (prescribed) setOverride(session.dayType, prescribed, entry.name, entry.setsStr);
+  }
   closeSubstituteModal();
   saveDraft(); render();
 }

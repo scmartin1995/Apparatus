@@ -171,6 +171,9 @@ const EXPORTS = [
   'substituteEntry', 'entryFor', 'openSubstituteModal', 'closeSubstituteModal',
   'saveSubstitution', 'SUB_NAME_MAX', 'SUB_SETS_MAX',
   'repRangeOf', 'rewriteScheme', 'setsLostBy', 'resizeSets', 'applyScheme',
+  'readOverrideMap', 'loadOverrides', 'saveOverrides', 'setOverride',
+  'prescribedNameAt', 'effectiveDay',
+  'generateCSVTemplate', 'renderBaselines',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];
