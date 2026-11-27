@@ -11,9 +11,19 @@ jobs:
   suite:
     runs-on: ubuntu-latest
     steps:
+      # Full history: the scoring-parity and legacy-record tests load older
+      # builds with `git show <sha>:index.html` and skip themselves without it.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
       - run: node --version
-      - run: node tools/test-app.js
+      # The suite's exit code is the gate. A skip is allowed locally, but here
+      # it would mean a parity test quietly stopped running, so it fails too.
+      - name: Run the behaviour suite
+        run: |
+          set -o pipefail
+          node tools/test-app.js | tee suite.log
+          grep -q '^ℹ skipped 0$' suite.log || { echo '::error::Tests were skipped in CI'; exit 1; }
