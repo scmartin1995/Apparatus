@@ -4,7 +4,7 @@ A single-file training tracker that runs as an installable PWA. Log sessions,
 score them, track 1RM baselines, and drive the whole thing from a program
 definition rather than hardcoded workouts.
 
-Everything ships in `index.html` — no build step, no dependencies. Open it over
+The app ships in `index.html` (plus self-hosted fonts in `fonts/`) — no build step, no dependencies. Open it over
 HTTP (a service worker needs a real origin, not `file://`) and it works offline
 from then on.
 
@@ -64,7 +64,7 @@ the app writes the same file. Columns:
 
 | column | meaning |
 | --- | --- |
-| `day` | Day name. Blank rows inherit the day above. |
+| `day` | Day name. Blank rows inherit the day above. Put weekdays in it ("Thursday", "Sun–Wed Off", "Mon/Wed/Fri") and the app opens on today's day. |
 | `day_focus` | Subtitle, e.g. `Chest · Shoulders · Triceps` |
 | `day_notes` | Session notes banner |
 | `section` | Section heading. Repeat to add items to it. |
@@ -76,9 +76,13 @@ the app writes the same file. Columns:
 
 `section_type` drives scoring: `warmup` rows aren't logged, `primary` scores on
 load and reps, `ar7` on rounds completed, everything else on sets and RPE.
+Programmed work that isn't logged scores zero, so skipping sets or exercises
+lowers the score.
 
-A CSV can't express day colors, durations, weekday scheduling, or 1RM values —
-the app fills those in. Use JSON if you need them preserved.
+A CSV can't express day colors, durations, or 1RM values — the app fills those
+in. Weekday scheduling comes from weekday names in the `day` column; weekdays no
+day names go to the one rest day, if there is exactly one. Use JSON if you need
+these preserved exactly.
 
 ### JSON export
 
@@ -92,10 +96,17 @@ a program between devices or keep a backup.
 index.html                      the entire app
 sw.js                           service worker (bump CACHE_NAME to ship an update)
 manifest.json                   PWA manifest
-icon-192.png / icon-512.png     app icons
+icon-192.png / icon-512.png     app icons (Plate A logo)
+favicon.svg / favicon-32.png    browser tab icon (simplified cut for small sizes)
+apple-touch-icon.png            iPhone home-screen icon
+fonts/                          self-hosted fonts + licences. Each .woff2 name ends in the first 8 hex
+                                digits of its SHA-256; a changed font gets a new name. FONT_FILES in
+                                sw.js must match fonts.css; run tools/check-fonts.js. Bump CACHE_NAME
+                                for any change in fonts/, fonts.css included
 programs/*.json                 program definitions
 programs/index.json             ordered list of what ships; first is the default
 tools/embed-program.js          validates them and inlines them into index.html
+tools/build-apk.sh              builds the Android app from android/ and the web app
 apparatus-program-template.csv  CSV reference
 ```
 
@@ -109,6 +120,22 @@ session), a `baselineId` with no matching baseline, a baseline-bound exercise
 that still has a fixed load in its sets string, a `weekdayMap` entry naming a day
 that doesn't exist, or two programs sharing an `id` (which would make them share
 one set of 1RMs).
+
+## Android app
+
+`tools/build-apk.sh` wraps the web app in a WebView and writes
+`android/build/apparatus.apk`, with the fonts bundled so it needs no network.
+The script header lists the tools it needs.
+
+The app keeps its own data, separate from the browser install. *Back Up All
+Data* on the Manage Program screen writes the program, 1RMs and history to one
+file; importing that file on the other side restores it.
+
+An update only installs over the existing app if it is signed with the same
+key. The keystore is not in the repo (`*.keystore` is gitignored); it is kept
+in Google Drive as `apparatus-signing.keystore`. Put it at
+`android/apparatus.keystore` before building, or the script creates a new key
+and the installed app has to be uninstalled first, which wipes its data.
 
 ## Local preview
 
