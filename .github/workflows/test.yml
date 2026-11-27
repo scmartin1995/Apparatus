@@ -1,0 +1,40 @@
+name: Tests
+
+# Runs the behaviour suite on every push and pull request, so a red build is
+# visible without anyone remembering to run it. Nothing is installed: the suite
+# uses only node's built-in test runner, and it exits non-zero on failure.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the scoring-parity and legacy-record tests load older
+      # builds with `git show <sha>:index.html` and skip themselves without it.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+      - run: node --version
+      # The suite's exit code is the gate. A skip is allowed locally, but here
+      # it would mean a parity test quietly stopped running, so it fails too.
+      # TAP marks every skipped test and every skipped describe block with
+      # "# SKIP"; the summary's skipped count misses a skipped describe.
+      - name: Run the behaviour suite
+        env:
+          NO_COLOR: '1'
+        run: |
+          set -o pipefail
+          node --test-reporter=tap tools/test-app.js 2>&1 | tee suite.log
+          grep -q '^# tests [1-9]' suite.log || { echo '::error::No test summary in the output'; exit 1; }
+          if grep -E '# SKIP' suite.log; then
+            echo '::error::Tests were skipped in CI (listed above)'
+            exit 1
+          fi
