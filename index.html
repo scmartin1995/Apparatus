@@ -416,7 +416,7 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .log-item-target strong { color: var(--c-primary-ctr); }
 .bw-toggle { position: relative; flex-shrink: 0; padding: 4px 10px; border-radius: 999px; background: var(--c-surface-ctr); border: 1px solid color-mix(in srgb, var(--c-outline-v) 40%, transparent); font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; letter-spacing: 0.1em; color: var(--c-on-surface-v); cursor: pointer; }
 .bw-toggle.on { background: color-mix(in srgb, var(--c-secondary) 12%, transparent); border-color: var(--c-secondary); color: var(--c-secondary); }
-.bw-toggle::after, .pr-btn::after { content: ''; position: absolute; inset: -10px -6px; }
+.bw-toggle::after, .pr-btn::after, .sub-swap::after { content: ''; position: absolute; inset: -10px -6px; }
 .log-set-row.pr-set .log-input { border-color: var(--c-pr); color: var(--c-pr); }
 .log-set-row.pr-set .log-set-num { color: var(--c-pr); }
 .log-set-row.pr-set::after { content: 'PR'; flex-shrink: 0; font-family: var(--font-h); font-weight: 800; font-size: 0.5625rem; letter-spacing: 0.08em; color: var(--c-on-pr); background: var(--c-pr); border-radius: var(--r-sm); padding: 2px 5px; }
@@ -444,6 +444,47 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .weight-hint-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: color-mix(in srgb, var(--c-primary-ctr) 8%, transparent); border: 1px solid color-mix(in srgb, var(--c-primary-ctr) 20%, transparent); color: var(--c-primary-ctr); padding: 3px 8px; border-radius: var(--r-sm); }
 .weight-hint-label { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
 .weight-hint-source { font-family: var(--font-b); font-size: 0.5625rem; color: var(--c-on-surface-v); opacity: 0.5; }
+/* Substitutions read in secondary, so a swapped Movement never reads as a
+   prescribed load, which is what the primary green means everywhere else. */
+.sub-swap { position: relative; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; margin: -2px -4px 0 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; color: var(--c-on-surface-v); transition: background 0.2s, color 0.2s; }
+.sub-swap:hover { background: var(--c-surface-top); color: var(--c-secondary); }
+.sub-swap.active { color: var(--c-secondary); }
+.sub-swap .mi { font-size: 1rem; }
+.sub-marker { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.sub-marker-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: color-mix(in srgb, var(--c-secondary) 8%, transparent); border: 1px solid color-mix(in srgb, var(--c-secondary) 25%, transparent); color: var(--c-secondary); padding: 3px 8px; border-radius: 4px; }
+.sub-marker-label { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
+.sub-marker-label strong { color: var(--c-on-surface); font-weight: 600; }
+.prog-sub-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 0 0 8px 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--c-secondary) 5%, transparent); border: 1px solid color-mix(in srgb, var(--c-secondary) 18%, transparent); }
+.prog-sub-row .sub-marker { margin-bottom: 0; flex: 1 1 60%; min-width: 0; }
+.prog-sub-revert { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.12em; background: none; border: 1px solid color-mix(in srgb, var(--c-outline-v) 20%, transparent); color: var(--c-on-surface); padding: 8px 12px; min-height: 36px; border-radius: 6px; cursor: pointer; flex: 0 0 auto; }
+.summary-subs { display: flex; flex-direction: column; gap: 8px; padding: 16px 0 18px; border-bottom: 1px solid rgba(72,72,71,0.15); }
+.summary-subs-title { font-family: var(--font-h); font-weight: 700; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); }
+.summary-sub-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.summary-sub-name { font-family: var(--font-h); font-weight: 700; font-size: 0.8125rem; color: var(--c-on-surface); }
+.summary-sub-replaced { font-family: var(--font-b); font-size: 0.6875rem; color: var(--c-on-surface-v); }
+.summary-sub-replaced strong { color: var(--c-on-surface); font-weight: 600; }
+.summary-promote { background: var(--c-surface-low); border-radius: 14px; padding: 18px; margin-top: 14px; }
+.summary-promote-title { font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-primary-ctr); margin-bottom: 4px; }
+.summary-promote-sub { font-family: var(--font-b); font-size: 0.75rem; color: var(--c-on-surface-v); line-height: 1.5; margin-bottom: 16px; }
+.summary-promote-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid rgba(72,72,71,0.2); }
+.summary-promote-what { flex: 1; min-width: 0; }
+.summary-promote-name { font-family: var(--font-h); font-weight: 700; font-size: 0.8125rem; color: var(--c-on-surface); }
+.summary-promote-instead { font-family: var(--font-b); font-size: 0.6875rem; color: var(--c-on-surface-v); margin-top: 2px; }
+.summary-promote-instead strong { color: var(--c-on-surface); font-weight: 600; }
+.summary-promote-keep { flex-shrink: 0; min-height: 40px; padding: 0 16px; border-radius: 10px; background: rgba(202,253,0,0.12); border: 1px solid var(--c-primary-ctr); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; color: var(--c-primary-ctr); cursor: pointer; }
+.summary-promote-dismiss { width: 100%; min-height: 40px; margin-top: 14px; border-radius: 10px; background: var(--c-surface-ctr); border: 1px solid rgba(72,72,71,0.25); font-family: var(--font-h); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--c-on-surface-v); cursor: pointer; }
+.edit-log-group-sub { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
+.edit-log-group-sub strong { color: var(--c-on-surface); font-weight: 600; }
+.session-row-sub { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-h); font-weight: 700; font-size: 0.5625rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-secondary); }
+.session-row-sub .mi { font-size: 0.75rem; }
+.input-field-text { font-size: 1rem; letter-spacing: -0.01em; }
+.input-field-sm { padding: 0.75rem 0.5rem; font-size: 1.125rem; text-align: center; }
+.sub-scheme { grid-template-columns: repeat(3, 1fr); margin-top: 1rem; }
+.sub-scheme.no-sets { grid-template-columns: repeat(2, 1fr); }
+.sub-permanent { display: flex; align-items: flex-start; gap: 10px; margin-top: 1rem; padding: 0.75rem 0; cursor: pointer; }
+.sub-permanent input { flex: 0 0 22px; width: 22px; height: 22px; margin: 0; accent-color: var(--c-secondary); }
+.sub-permanent span { font-family: var(--font-b); font-size: 0.75rem; line-height: 1.5; color: var(--c-on-surface-v); }
+.modal-error { color: var(--c-error); }
 .log-ar7 { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .log-ar7-label { font-family: var(--font-h); font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); }
 .log-ar7-dots { display: flex; gap: 0; flex: 1; min-width: 154px; }
@@ -774,6 +815,28 @@ body.session-active .bottomnav { display: none; }
   </div>
 </div>
 
+<!-- SUBSTITUTE MOVEMENT -->
+<div class="modal-overlay" id="substituteModal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="modal-eyebrow">Substitute Movement</span>
+      <button id="subCancelBtn" class="modal-close"><span class="mi mi-sm">close</span></button>
+    </div>
+    <div class="modal-lift-name" id="subPrescribedName"></div>
+    <label class="input-label" for="subNameInput">Doing instead</label>
+    <input id="subNameInput" type="text" class="input-field input-field-text" placeholder="Whatever you are actually doing" maxlength="60" autocomplete="off" autocapitalize="words" spellcheck="false"/>
+    <div class="modal-inputs sub-scheme" id="subSchemeRow">
+      <div id="subSetsField"><label class="input-label" for="subSetsInput">Sets</label><input id="subSetsInput" type="number" inputmode="numeric" min="1" max="12" class="input-field input-field-sm"/></div>
+      <div><label class="input-label" for="subRepLowInput">Rep Low</label><input id="subRepLowInput" type="number" inputmode="numeric" min="1" class="input-field input-field-sm"/></div>
+      <div><label class="input-label" for="subRepHighInput">Rep High</label><input id="subRepHighInput" type="number" inputmode="numeric" min="1" class="input-field input-field-sm"/></div>
+    </div>
+    <label class="sub-permanent" for="subPermanentInput"><input id="subPermanentInput" type="checkbox"/><span>Make it permanent &mdash; stand in for this Movement in future Sessions of this Day too. Your Program is not edited.</span></label>
+    <p class="modal-preview" id="subModalHint"></p>
+    <button id="subSaveBtn" class="btn-save">Substitute</button>
+    <button id="subRevertBtn" class="btn-ghost">Revert to Prescribed</button>
+  </div>
+</div>
+
 <!-- TIMER SETTINGS -->
 <div class="timer-settings-overlay" id="timerSettingsOverlay">
   <div class="timer-settings-modal">
@@ -842,6 +905,7 @@ const LS_SESSIONS  = 'apparatus_sessions';
 const LS_DRAFT     = 'apparatus_draft';
 const LS_NUDGE     = 'apparatus_nudge_';
 const LS_BUILTIN   = 'apparatus_builtin';
+const LS_OVERRIDES = 'apparatus_overrides';
 const LS_TIMER     = 'apparatus_timer';
 const LS_BW        = 'apparatus_bodyweight';
 const LS_THEME     = 'apparatus_theme';
@@ -1984,7 +2048,9 @@ function saveProgram(p) {
   try { localStorage.setItem(LS_PROGRAM, JSON.stringify(p)); return true; } catch(e) { return false; }
 }
 function clearProgram() {
-  // Drops the imported override only; baselines stay keyed per program.
+  // Drops the imported program only; baselines and Permanent Substitution
+  // overrides stay keyed per program, so dropping an import discards nothing
+  // else the lifter decided.
   try { localStorage.removeItem(LS_PROGRAM); } catch(e) {}
   initProgramState();
 }
@@ -2439,6 +2505,109 @@ function carryOverBaselines(prev) {
   } catch(e) {}
 }
 
+// ── PERMANENT SUBSTITUTION OVERRIDES ───────────────────────
+// A Permanent Substitution has to outlive the Session that made it, so it
+// persists here rather than in the Program. The store is
+// { [programId]: { [dayId]: { [prescribedName]: { name, sets } } } } under its
+// own key — the shape Baselines already use: kept per Program so switching
+// between a Built-In and an imported one mixes nothing up, and applied on top
+// of a Day at read time so the Program definition is never written to.
+//
+// Keyed by Day rather than by Movement name alone, because Movements repeat
+// across Days and a global key would reach Days the lifter never meant to
+// change. Keyed by the prescribed Movement's *name* rather than its position,
+// so an override for a Movement a Day no longer prescribes goes inert instead
+// of landing on its neighbour. Rationale and the rejected alternative are in
+// docs/adr/0001-permanent-substitutions-as-an-override-layer.md.
+function readOverrideMap() {
+  try {
+    const stored = localStorage.getItem(LS_OVERRIDES);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+  } catch(e) { return {}; }
+}
+// The active Program's overrides, as { [dayId]: { [prescribedName]: entry } }.
+function loadOverrides() {
+  try {
+    const mine = readOverrideMap()[currentProgramId()];
+    return (mine && typeof mine === 'object' && !Array.isArray(mine)) ? mine : {};
+  } catch(e) { return {}; }
+}
+function saveOverrides(data) {
+  try {
+    const map = readOverrideMap();
+    map[currentProgramId()] = data;
+    localStorage.setItem(LS_OVERRIDES, JSON.stringify(map));
+  } catch(e) {}
+}
+// Records one Permanent Substitution: the Day it was made on, the prescribed
+// Movement it stands in for, and the substitute's name and scheme.
+function setOverride(dayId, prescribedName, name, setsStr) {
+  if (!dayId || !prescribedName || !name) return;
+  const data = loadOverrides();
+  if (!data[dayId] || typeof data[dayId] !== 'object') data[dayId] = {};
+  data[dayId][prescribedName] = { name: name, sets: setsStr || '' };
+  saveOverrides(data);
+}
+// Undoes one Permanent Substitution: the Day goes back to prescribing what the
+// Program names. Removing a Day's last override takes the Day's own entry with
+// it, so an empty husk is never left behind to read as "this Day has Permanent
+// Substitutions" on a later pass.
+function removeOverride(dayId, prescribedName) {
+  if (!dayId || !prescribedName) return;
+  try {
+    const data = loadOverrides();
+    const forDay = data[dayId];
+    if (!forDay || typeof forDay !== 'object' || !(prescribedName in forDay)) return;
+    delete forDay[prescribedName];
+    if (!Object.keys(forDay).length) delete data[dayId];
+    saveOverrides(data);
+  } catch(e) {}
+}
+// The Movement the Program prescribes at a Session snapshot key. An override is
+// keyed by that, not by what the lifter is looking at — which is already the
+// substitute when they are substituting on top of a Permanent Substitution.
+function prescribedNameAt(dayId, key) {
+  const day = DAYS.find(d => d.id === dayId);
+  if (!day || !day.sections) return null;
+  const parts = String(key || '').split('-');
+  const sec = day.sections[parseInt(parts[0], 10)];
+  const item = sec && sec.items && sec.items[parseInt(parts[1], 10)];
+  return item ? item.name : null;
+}
+// The seam. Turns a Day plus the override store into an *effective* Day: the
+// same structure, with permanently substituted Movements replaced. Every
+// surface that shows or consumes a Day's Movements goes through this, because a
+// missed call site shows the lifter a Movement they do not do, with no error.
+//
+// Always returns a clone. The Day in DAYS is the Program definition, and a
+// Substitution never writes to it. Pass `overrides` to resolve against a store
+// other than the active Program's.
+function effectiveDay(day, overrides) {
+  if (!day) return day;
+  const forDay = (overrides || loadOverrides())[day.id];
+  const eff = clone(day);
+  if (!forDay || !eff.sections) return eff;
+  eff.sections.forEach(sec => {
+    (sec.items || []).forEach(item => {
+      const ov = forDay[item.name];
+      if (!ov || !ov.name) return;
+      // Labelled with what it replaced, so a Permanent Substitution never reads
+      // as the Program having changed on its own.
+      item.substitutedFor = item.name;
+      item.name = ov.name;
+      item.sets = ov.sets || item.sets;
+      // A substitute is a different exercise, so the Baseline binding stays
+      // with the prescribed Movement: carrying it over would prescribe a
+      // barbell load for a dumbbell movement. The Baseline record itself is
+      // untouched and stays on the Strength page.
+      item.baselineId = null;
+    });
+  });
+  return eff;
+}
+
 // ── DAY CLASSIFICATION ─────────────────────────────────────
 function classifySection(sec) {
   const t = (sec.type || '').toLowerCase().trim();
@@ -2513,18 +2682,28 @@ function historyBestOrm(name, all) {
   return best;
 }
 function sessionItem(key) {
-  const day = session && DAYS.find(d => d.id === session.dayType), at = String(key).split('-');
-  const sec = day && day.sections[at[0]];
-  return (sec && sec.items[at[1]]) || null;
+  // A PR belongs to the Movement actually being logged, so this reads the
+  // Session snapshot: the Day still prescribes the replaced Movement, whose
+  // Baseline and name history are the wrong ones to measure a substitute
+  // against. Deliberately the same lookup prInfo uses for its own entry, so
+  // the entry and the item it is scored against cannot drift apart again.
+  const entry = session && (session.primaries[key] || session.accessories[key]);
+  return entry ? snapshotAsMovement(entry) : null;
 }
 function prInfo(key, item) {
   const entry = session && (session.primaries[key] || session.accessories[key]);
   if (!entry || entry.bw || !item) return null;
   const b = liftBaseline(item);
-  // Fixed for the session, so a set stays marked after the 1RM is updated.
-  if (typeof entry.prBase !== 'number') entry.prBase = (b && b.orm > 0) ? b.orm : historyBestOrm(item.name);
   const orms = entry.sets.map(setOrm), best = Math.max.apply(null, orms.concat(0));
-  const flags = orms.map(o => entry.prBase > 0 && o > entry.prBase);
+  // Fixed for the session, so a set stays marked after the 1RM is updated. It
+  // waits for a logged set because that is the first moment a PR can be shown,
+  // and stamping on bare render wrote the field into every Movement the lifter
+  // never touched — cleanGroup whitelists it, so the junk was then persisted.
+  if (typeof entry.prBase !== 'number' && best > 0) entry.prBase = (b && b.orm > 0) ? b.orm : historyBestOrm(item.name);
+  // Graded through a local copy, so an entry with nothing logged is measured
+  // against the right number without being written to.
+  const base = typeof entry.prBase === 'number' ? entry.prBase : ((b && b.orm > 0) ? b.orm : historyBestOrm(item.name));
+  const flags = orms.map(o => base > 0 && o > base);
   return { entry: entry, baseline: b, best: best, flags: flags, isPr: flags.some(Boolean), canUpdate: !!b && best > b.orm };
 }
 function prBoxHtml(key, info) {
@@ -2553,7 +2732,9 @@ window.applyPr = function(key) {
 
 // ── SESSION INIT ───────────────────────────────────────────
 function initSession(dayType) {
-  const day = DAYS.find(d => d.id === dayType);
+  // Through the resolver, so a Permanent Substitution for this Day is already
+  // in place — with its stored scheme — before the lifter logs a thing.
+  const day = effectiveDay(DAYS.find(d => d.id === dayType));
   const s = { dayType, programId: currentProgramId(), startTime: Date.now(), primaries: {}, ar7: {}, accessories: {}, feel: null };
   if (!day || !day.sections) return s;
   day.sections.forEach((sec, si) => {
@@ -2562,7 +2743,10 @@ function initSession(dayType) {
     sec.items.forEach((item, ii) => {
       const key = si + '-' + ii;
       const tgt = parseSetsStr(item.sets);
-      const base = { name: item.name, note: item.note || '', target: tgt, setsStr: item.sets || '' };
+      // Session mode renders from this snapshot, not from the program, so the
+      // snapshot has to carry everything the display needs — the baseline
+      // binding included, or a logged lift loses its working range.
+      const base = { name: item.name, note: item.note || '', target: tgt, setsStr: item.sets || '', baselineId: item.baselineId || null, substitutedFor: null };
       if (cat !== 'ar7') base.bw = isBodyweight(item);
       if (cat === 'primary') {
         base.sets = [];
@@ -2738,6 +2922,16 @@ function cleanGroup(g, kind) {
     const c = { name: String(it.name == null ? '' : it.name), note: String(it.note == null ? '' : it.note), setsStr: String(it.setsStr == null ? '' : it.setsStr),
       target: (function() { const pos = v => Math.min(Math.max(parseInt(v) || 1, 1), 1000), lo = pos(t.repLow); return { numSets: Math.min(pos(t.numSets), 20), repLow: lo, repHigh: Math.max(pos(t.repHigh || t.repLow), lo) }; })() };
     if (typeof it.prBase === 'number' && isFinite(it.prBase)) c.prBase = it.prBase;
+    // This whitelist rebuilds the entry from scratch and predates
+    // Substitutions, so a field the snapshot carries is dropped on every read
+    // unless it is named here — and every read cleans, getAllSessions and
+    // loadDraft alike. Anything added to a Session entry belongs here too.
+    // Copied only when the entry has them: null is what initSession writes,
+    // but a record or draft from before the feature has neither key at all,
+    // and inventing null there would tell backfillSnapshot the gap is filled
+    // and leave the Lift with no Baseline binding.
+    if ('substitutedFor' in it) c.substitutedFor = it.substitutedFor == null ? null : String(it.substitutedFor);
+    if ('baselineId' in it) c.baselineId = it.baselineId == null ? null : safeId(it.baselineId, '');
     if (kind === 'ar7') { c.weight = numStr(it.weight); c.rounds = Math.min(Math.max(parseInt(it.rounds) || 0, 0), 7); }
     else { c.bw = !!it.bw; c.sets = cleanSets(it.sets); if (kind === 'acc') c.rpe = Math.min(Math.max(parseInt(it.rpe) || 0, 0), 5); }
     out[k] = c;
@@ -2818,8 +3012,228 @@ function startSession(dayType) {
   document.getElementById('finishBar').style.display = 'flex';
   startSessionClock(); render();
 }
+// A draft saved by an older build may predate a field the snapshot now carries,
+// and session mode reads the snapshot rather than the program. Fill the gaps in
+// from the Day it was started from, so a resumed draft renders in full.
+function backfillSnapshot(s) {
+  // The effective Day, not the raw one: a resumed draft filling its gaps from
+  // the Program would disagree with a fresh Session on the same Day.
+  const day = s && effectiveDay(DAYS.find(d => d.id === s.dayType));
+  if (!day || !day.sections) return s;
+  day.sections.forEach((sec, si) => {
+    const cat = classifySection(sec);
+    if (cat === 'skip') return;
+    sec.items.forEach((item, ii) => {
+      const key = si + '-' + ii;
+      const entry = cat === 'primary' ? s.primaries[key]
+                  : cat === 'ar7'     ? s.ar7[key]
+                                      : s.accessories[key];
+      if (!entry) return;
+      if (entry.name === undefined)       entry.name = item.name;
+      if (entry.note === undefined)       entry.note = item.note || '';
+      if (entry.setsStr === undefined)    entry.setsStr = item.sets || '';
+      if (entry.target === undefined)     entry.target = parseSetsStr(item.sets);
+      if (entry.baselineId === undefined) entry.baselineId = item.baselineId || null;
+      if (entry.substitutedFor === undefined) entry.substitutedFor = null;
+    });
+  });
+  return s;
+}
+
+// ── SUBSTITUTIONS ──────────────────────────────────────────
+// A Substitution is session-local: it edits the Session snapshot and travels
+// into the Session record, and never touches the Program. Free text by design —
+// no preset list, no autocomplete, no matching against known Movements.
+const SUB_NAME_MAX = 60;
+let substituting = null;
+
+function entryFor(cat, key) {
+  if (!session) return null;
+  const group = cat === 'primary' ? session.primaries
+              : cat === 'ar7'     ? session.ar7
+                                  : session.accessories;
+  return group[key] || null;
+}
+// Replaces what the lifter logs against. The baseline binding goes with it:
+// keeping it would prescribe a barbell load for a dumbbell movement.
+function substituteEntry(entry, rawName, cat) {
+  const name = String(rawName || '').trim().slice(0, SUB_NAME_MAX);
+  if (!name) return false;
+  // Records what was replaced in the Day the lifter was looking at, so
+  // substituting twice over still points at what the Program asked for.
+  if (!entry.substitutedFor) entry.substitutedFor = entry.name;
+  entry.name = name;
+  entry.baselineId = null;
+  // prBase was stamped from the Movement being replaced — its Lift's 1RM, or
+  // the best in history under its name — so leaving it would mark and miss PRs
+  // for the substitute against the wrong number. Dropped, it is re-derived
+  // from the substitute's own name on the next render.
+  delete entry.prBase;
+  // bw is the one value derived from the Movement that is computed once and
+  // cached here rather than re-resolved at render time from a field the lines
+  // above reset — liftBaseline reads baselineId, getSuggestedWeight reads name.
+  // Left standing it hands the substitute the replaced Movement's answer for the
+  // rest of the Session: a barbell row logged as bodyweight, no weight hint, and
+  // prInfo refusing the entry outright, so no PR tracking at all. Re-derived from
+  // the substitute's own name, which is also where the lifter's stored preference
+  // for it lives — the same "improves on its own" property suggested loads have.
+  // A typed name carries no Program bodyweight flag, as it should: the Program
+  // never prescribed this Movement.
+  if (cat !== 'ar7') entry.bw = isBodyweight({ name: name });
+  return true;
+}
+
+// AR-7 writes its scheme as "6–8 reps" and has no set count, so its rep range
+// lives in the string rather than in the parsed target (which AR-7 scoring
+// never reads). Everything else writes "3 × 8–10", sometimes with a qualifier
+// after it.
+const AR7_REPS_RE = /^(\s*)(\d+)(?:\s*[–—-]\s*(\d+))?/;
+const SETS_REPS_RE = /^(\s*)(\d+)(\s*[×x]\s*)(\d+)(?:(\s*[–—-]\s*)(\d+))?/;
+const SUB_SETS_MAX = 12;
+const SUB_REPS_MAX = 100;
+
+function repRangeOf(entry, cat) {
+  if (cat === 'ar7') {
+    const m = AR7_REPS_RE.exec(entry.setsStr || '');
+    if (m) {
+      const lo = parseInt(m[2]);
+      return { repLow: lo, repHigh: m[3] ? parseInt(m[3]) : lo };
+    }
+  }
+  const t = entry.target || { repLow: 1, repHigh: 1 };
+  return { repLow: t.repLow, repHigh: t.repHigh };
+}
+function fmtRange(lo, hi) { return lo === hi ? String(lo) : lo + '–' + hi; }
+// Rewrites the numbers in a scheme and leaves the rest of the line alone, so a
+// "/ side" or a load note survives a change the lifter did not ask for.
+function rewriteScheme(original, cat, numSets, repLow, repHigh) {
+  const str = String(original || '');
+  if (cat === 'ar7') {
+    const m = AR7_REPS_RE.exec(str);
+    if (m) return m[1] + fmtRange(repLow, repHigh) + str.slice(m[0].length);
+    return fmtRange(repLow, repHigh) + ' reps';
+  }
+  const m = SETS_REPS_RE.exec(str);
+  if (m) return m[1] + numSets + m[3] + fmtRange(repLow, repHigh) + str.slice(m[0].length);
+  return numSets + ' × ' + fmtRange(repLow, repHigh);
+}
+
+// How many sets already carry logged work beyond a proposed new count. A
+// reduction past these would throw away work the lifter has done.
+function setsLostBy(entry, numSets) {
+  if (!entry.sets) return 0;
+  return entry.sets.slice(numSets).filter(s => s && (s.weight || s.reps)).length;
+}
+// Rebuilds the set array to the new count, keeping logged values by index as
+// far as they fit. scoreAccessory divides by set count, so this is a
+// scoring-relevant edit, not only a display one.
+function resizeSets(entry, numSets) {
+  if (!entry.sets) return;
+  const next = [];
+  for (let i = 0; i < numSets; i++) {
+    next.push(entry.sets[i] ? { weight: entry.sets[i].weight || '', reps: entry.sets[i].reps || '' }
+                            : { weight: '', reps: '' });
+  }
+  entry.sets = next;
+}
+// Applies a scheme the lifter set. AR-7 keeps seven rounds and has no sets, so
+// only its rep range moves.
+function applyScheme(entry, cat, numSets, repLow, repHigh) {
+  entry.target = {
+    numSets: cat === 'ar7' ? (entry.target ? entry.target.numSets : 1) : numSets,
+    repLow: repLow, repHigh: repHigh,
+  };
+  entry.setsStr = rewriteScheme(entry.setsStr, cat, numSets, repLow, repHigh);
+  if (cat !== 'ar7') resizeSets(entry, numSets);
+}
+// The prescribed Movement behind a snapshot key, read back out of the Day the
+// Session was started from. `substitutedFor` carries the prescribed Movement's
+// name only, so a revert cannot restore the scheme or the baseline binding from
+// the snapshot alone — but the key encodes the position, so the Day still can.
+//
+// This is the ONE place a snapshot key is resolved to its prescribed Movement.
+// Scattered across call sites, that lookup would get it wrong quietly — and it
+// has two cases to tell apart, both of them real:
+//
+//   - A day-only Substitution made on top of a Permanent one. The effective Day
+//     prescribes the permanent substitute, and that is what the lifter was
+//     shown when the Session started, so the revert has to land there and not
+//     on the Movement the Program ships.
+//   - A Substitution marked permanent during this very Session. Ticking the box
+//     writes the override straight away, so by the time a revert runs the
+//     effective Day already resolves this position to the substitute itself —
+//     going back to that would be a destructive no-op. Here the lifter is going
+//     back to the Program's Movement, and the raw Day is the only place left
+//     holding it.
+//
+// `substitutedFor` records what was replaced and is right in both cases, so the
+// item wanted is the one at this position whose name matches it: the effective
+// Day's where that holds, the raw Day's otherwise.
+function prescribedItemFor(cat, key) {
+  if (!session) return null;
+  const raw = DAYS.find(d => d.id === session.dayType);
+  if (!raw) return null;
+  const parts = String(key).split('-');
+  // Position and Section kind are checked against whichever Day is read, so a
+  // position the Day no longer prescribes still resolves to nothing rather than
+  // to its neighbour.
+  const itemIn = day => {
+    if (!day || !day.sections) return null;
+    const sec = day.sections[parseInt(parts[0], 10)];
+    if (!sec || !sec.items || classifySection(sec) !== cat) return null;
+    return sec.items[parseInt(parts[1], 10)] || null;
+  };
+  const effective = itemIn(effectiveDay(raw));
+  const entry = entryFor(cat, key);
+  const replaced = entry && entry.substitutedFor;
+  if (!replaced || (effective && effective.name === replaced)) return effective;
+  return itemIn(raw) || effective;
+}
+// What reverting would cost: only the values logged against the substitute
+// count. A revert with nothing filled in throws nothing away and is not worth
+// asking about.
+function loggedValuesIn(entry) {
+  if (!entry) return 0;
+  let n = (entry.sets || []).filter(s => s && (s.weight || s.reps)).length;
+  if (entry.weight) n++;
+  if (entry.rounds) n++;
+  if (entry.rpe) n++;
+  return n;
+}
+// Puts the prescribed Movement back where the substitute stood: its name, its
+// scheme, and its baseline binding, so the working range drawn from the Lift's
+// 1RM reappears. The logged values go with the substitute, because carrying
+// them over would attribute them to the prescribed Movement and feed them to
+// the history-based suggested-weight lookup, which matches on Movement name.
+// What is left is the entry initSession would have built.
+function revertEntry(entry, item, cat) {
+  entry.name = item.name;
+  entry.note = item.note || '';
+  entry.setsStr = item.sets || '';
+  entry.target = parseSetsStr(item.sets);
+  entry.baselineId = item.baselineId || null;
+  entry.substitutedFor = null;
+  // prBase was stamped from the substitute — its Lift's 1RM, or the best in
+  // history under its name — so leaving it would mark and miss PRs for the
+  // restored Movement against the wrong number. Dropped, it is re-derived
+  // from the prescribed Movement's own Baseline on the next render.
+  delete entry.prBase;
+  // bw came off the substitute, and the lifter may have corrected the toggle on
+  // top of that, so neither value belongs to the Movement coming back. Stamped
+  // the way initSession stamps it — from the prescribed Movement itself, Program
+  // flag and all — because that is what makes a reverted Movement genuinely
+  // indistinguishable from one never substituted rather than merely renamed.
+  if (cat !== 'ar7') entry.bw = isBodyweight(item);
+  if (entry.sets) {
+    entry.sets = [];
+    for (let i = 0; i < entry.target.numSets; i++) entry.sets.push({ weight: '', reps: '' });
+  }
+  if (entry.weight !== undefined) entry.weight = '';
+  if (entry.rounds !== undefined) entry.rounds = 0;
+  if (entry.rpe !== undefined) entry.rpe = 0;
+}
 function resumeSession(draftData) {
-  session = draftData;
+  session = backfillSnapshot(draftData);
   document.body.classList.add('session-active');
   document.getElementById('finishBar').style.display = 'flex';
   activeDay = session.dayType; startSessionClock(); render();
@@ -2910,16 +3324,28 @@ function renderSessionMode(day) {
     let itemsHtml = '';
     sec.items.forEach((item, ii) => {
       const key = si + '-' + ii;
-      const noteHtml = item.note ? '<div class="log-item-note">' + esc(item.note) + '</div>' : '';
-      const targetHtml = '<div class="log-item-target">Target: <strong>' + esc(displaySets(item)) + '</strong></div>';
-      const entry = session.primaries[key] || session.accessories[key];
-      const bwBtn = entry ? '<button class="bw-toggle' + (entry.bw?' on':'') + '" aria-pressed="' + (entry.bw?'true':'false') + '" onclick="toggleBodyweight(\'' + key + '\')">BW</button>' : '';
-      const header = '<div class="log-item-header"><div class="log-item-name">' + esc(item.name) + '</div>' + bwBtn + '</div>' + targetHtml + lastTimeHtml(item.name, history);
+      // Everything shown here comes from the Session snapshot, never from the
+      // program: what the lifter is logging against is what they should see.
+      const entry = cat === 'primary' ? session.primaries[key]
+                  : cat === 'ar7'     ? session.ar7[key]
+                                      : session.accessories[key];
+      if (!entry) return;
+      const isSub = !!entry.substitutedFor;
+      const noteHtml = entry.note ? '<div class="log-item-note">' + escHtml(entry.note) + '</div>' : '';
+      const targetHtml = '<div class="log-item-target">Target: <strong>' + escHtml(displaySets(snapshotAsMovement(entry))||'') + '</strong></div>';
+      const bwBtn = cat !== 'ar7' ? '<button class="bw-toggle' + (entry.bw?' on':'') + '" aria-pressed="' + (entry.bw?'true':'false') + '" onclick="toggleBodyweight(\'' + key + '\')">BW</button>' : '';
+      const swapHtml = '<button class="sub-swap' + (isSub ? ' active' : '') + '" title="Substitute this Movement" aria-label="Substitute this Movement" onclick="openSubstituteModal(\'' + cat + '\',\'' + key + '\')"><span class="mi" aria-hidden="true">swap_horiz</span></button>';
+      const header = '<div class="log-item-header"><div class="log-item-name">' + escHtml(entry.name) + '</div>' + bwBtn + swapHtml + '</div>' + targetHtml + lastTimeHtml(entry.name, history);
+      // Always say what the Program asked for, so a Substitution never reads as
+      // the Program having changed on its own.
+      const subHtml = isSub
+        ? '<div class="sub-marker"><span class="sub-marker-badge">Substituted</span><span class="sub-marker-label">replaces <strong>' + escHtml(entry.substitutedFor) + '</strong></span></div>'
+        : '';
       if (cat === 'primary') {
-        const p = session.primaries[key]; if (!p) return;
-        const hintHtml = p.bw ? '' : weightHintHtml(item.name, item.sets, item.baselineId, history);
+        const p = entry;
+        const hintHtml = p.bw ? '' : weightHintHtml(p.name, p.setsStr, p.baselineId, history);
         let setsHtml = '';
-        const pr = prInfo(key, item);
+        const pr = prInfo(key, snapshotAsMovement(entry));
         p.sets.forEach((set, idx) => {
           setsHtml += '<div class="log-set-row' + (pr && pr.flags[idx] ? ' pr-set' : '') + '" data-pr-key="' + key + '"><span class="log-set-num">S' + (idx+1) + '</span>' +
             '<input class="log-input ' + (set.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="' + (p.bw?'BW +':'lb') + '" value="' + (set.weight||'') + '" oninput="updatePrimarySet(\'' + key + '\',' + idx + ',\'weight\',this.value)"/>' +
@@ -2927,20 +3353,20 @@ function renderSessionMode(day) {
             '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updatePrimarySet(\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
             '</div>';
         });
-        itemsHtml += '<div class="log-item">' + header + noteHtml + hintHtml + '<div class="log-sets">' + setsHtml + '</div><div id="pr-' + key + '">' + prBoxHtml(key, pr) + '</div></div>';
+        itemsHtml += '<div class="log-item">' + header + subHtml + noteHtml + hintHtml + '<div class="log-sets">' + setsHtml + '</div><div id="pr-' + key + '">' + prBoxHtml(key, pr) + '</div></div>';
       } else if (cat === 'ar7') {
-        const a = session.ar7[key]; if (!a) return;
+        const a = entry;
         let dotsHtml = '';
         for (let r = 0; r < 7; r++) dotsHtml += '<button class="log-ar7-dot ' + (r < a.rounds ? 'done' : '') + '" aria-label="Round ' + (r+1) + '" aria-pressed="' + (r < a.rounds) + '" onclick="toggleAr7Round(\'' + key + '\',' + r + ')"></button>';
         const weightHtml = '<div class="log-set-row" style="margin-top:4px"><span class="log-set-num">LOAD</span><input class="log-input ' + (a.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="lb" value="' + (a.weight||'') + '" oninput="updateAr7Weight(\'' + key + '\',this.value)" style="flex:0 0 90px"/><span class="log-input-x" style="font-size:0.625rem">lb</span></div>';
         const ar7Html = '<div class="log-ar7"><span class="log-ar7-label">Rounds</span><div class="log-ar7-dots">' + dotsHtml + '</div><span class="log-ar7-count">' + a.rounds + '/7</span></div>';
-        itemsHtml += '<div class="log-item">' + header + noteHtml + weightHtml + ar7Html + '</div>';
+        itemsHtml += '<div class="log-item">' + header + subHtml + noteHtml + weightHtml + ar7Html + '</div>';
       } else {
-        const acc = session.accessories[key]; if (!acc) return;
-        const accHint = acc.bw ? null : getSuggestedWeight(item.name, item.sets, item.baselineId, history);
+        const acc = entry;
+        const accHint = acc.bw ? null : getSuggestedWeight(acc.name, acc.setsStr, acc.baselineId, history);
         const accHintHtml = accHint ? '<div class="weight-hint"><span class="weight-hint-badge">~' + accHint.weight + ' lb</span><span class="weight-hint-label">suggested</span><span class="weight-hint-source">' + (accHint.source==='baseline'?'from 1RM':'last session') + '</span></div>' : '';
         let setsHtml = '';
-        const pr = prInfo(key, item);
+        const pr = prInfo(key, snapshotAsMovement(entry));
         acc.sets.forEach((set, idx) => {
           setsHtml += '<div class="log-set-row' + (pr && pr.flags[idx] ? ' pr-set' : '') + '" data-pr-key="' + key + '"><span class="log-set-num">S' + (idx+1) + '</span>' +
             '<input class="log-input ' + (set.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="' + (acc.bw?'BW +':'lb') + '" value="' + (set.weight||'') + '" oninput="updateAccessorySet(\'' + key + '\',' + idx + ',\'weight\',this.value)"/>' +
@@ -2951,7 +3377,7 @@ function renderSessionMode(day) {
         let rpeDots = '';
         for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" aria-label="RPE ' + r + '" aria-pressed="' + (acc.rpe===r) + '" onclick="setAccessoryRpe(\'' + key + '\',' + r + ')">' + r + '</button>';
         const rpeHtml = '<div class="log-rpe"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div>';
-        itemsHtml += '<div class="log-item">' + header + noteHtml + accHintHtml + '<div class="log-sets">' + setsHtml + '</div><div id="pr-' + key + '">' + prBoxHtml(key, pr) + '</div>' + rpeHtml + '</div>';
+        itemsHtml += '<div class="log-item">' + header + subHtml + noteHtml + accHintHtml + '<div class="log-sets">' + setsHtml + '</div><div id="pr-' + key + '">' + prBoxHtml(key, pr) + '</div>' + rpeHtml + '</div>';
       }
     });
     bodyHtml += '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '>' +
@@ -2999,6 +3425,15 @@ function renderSummary(record) {
     '<div class="comp-row"><div class="comp-label">Hypertrophy</div><div class="comp-bar-wrap"><div class="comp-bar hyper" style="width:' + sc.hyperPct + '%"></div></div><div class="comp-val">' + sc.hyper + '/' + sc.hyperMax + '</div></div>' +
     '<div class="comp-row"><div class="comp-label">Feel</div><div class="comp-bar-wrap"><div class="comp-bar feel" style="width:' + sc.feelPct + '%"></div></div><div class="comp-val">' + sc.feel + '/' + sc.feelMax + '</div></div>' +
     '</div>' +
+    // ── Substitutions on the Summary ── one self-contained block, so the
+    // rest of the Summary is untouched. A marker, not a caveat: nothing
+    // here reads or changes the Score.
+    renderSummarySubs(record) +
+    // ── end of the Substitutions block ──
+    // ── The End-of-Session promotion prompt ── gated on its own, not on the
+    // Feel survey below: the survey vanishes for good once feel is saved, and
+    // one tap answering it must not decide every Substitution by default.
+    renderPromotionPrompt(record) +
     '<button id="editLogToggle" class="edit-log-toggle" onclick="toggleEditLog(\'' + record.id + '\')">' +
     '<span class="mi mi-sm" style="font-variation-settings:FILL 0,wght 400,GRAD 0,opsz 24">edit</span>Edit Log</button>' +
     '<div id="editLogSection" class="edit-log-section" style="display:none">' + renderEditLog(record) + '</div>' +
@@ -3006,6 +3441,167 @@ function renderSummary(record) {
     '<button class="btn-ghost btn-delete-session" onclick="deleteSession(\'' + record.id + '\')"><span class="mi mi-sm" aria-hidden="true">delete</span>Delete Session</button>';
   animateScoreRing(sc.total);
 }
+// The Substitutions a Session record carries, by Section kind. A Session
+// recorded before Substitutions existed has no substitutedFor key on its
+// entries at all, so a missing key reads the same as an unsubstituted
+// Movement rather than as something to show.
+function substitutionsIn(record) {
+  const out = [];
+  if (!record) return out;
+  ['primaries', 'ar7', 'accessories'].forEach(group => {
+    const entries = record[group] || {};
+    Object.keys(entries).forEach(key => {
+      const entry = entries[key];
+      if (!entry || !entry.substitutedFor) return;
+      out.push({ name: entry.name || '', replaced: entry.substitutedFor });
+    });
+  });
+  return out;
+}
+// Reviewing a Session should tell the whole story, so the Summary lists each
+// substituted Movement with the Movement it replaced. A substitute name was
+// typed by the lifter, so it is escaped before it reaches innerHTML.
+function renderSummarySubs(record) {
+  const subs = substitutionsIn(record);
+  if (!subs.length) return '';
+  return '<div class="summary-subs"><div class="summary-subs-title">Substituted</div>' +
+    subs.map(s => '<div class="summary-sub-row"><span class="summary-sub-name">' + escHtml(s.name) + '</span>' +
+      '<span class="summary-sub-replaced">replaces <strong>' + escHtml(s.replaced) + '</strong></span></div>').join('') +
+    '</div>';
+}
+// ── END-OF-SESSION PROMOTION PROMPT ────────────────────────
+// A lifter who swapped a Movement mid-Session often does not yet know whether
+// the swap is a keeper, so the Summary asks once the work is done and they can
+// judge how the alternative actually went. Only Substitutions the lifter never
+// decided are asked about, and only until they answer.
+//
+// Where "decided" is recorded, and why it is not on the Session record: the
+// record is history, a statement of what happened that day, and promoting must
+// leave it alone. A decision is about what the Program should prescribe next
+// week instead, so it lives in its own persisted key beside the override store,
+// filed by Session record id. Persisted rather than held in memory because the
+// Summary is reopened from history long after a reload, and an undecided
+// Substitution must not nag the lifter every time they look.
+//
+// The key is declared here rather than up in STORAGE KEYS so this block stays
+// one self-contained region while neighbouring work lands.
+const LS_SUB_DECISIONS = 'apparatus_sub_decisions';
+
+// { [recordId]: { [snapshot key]: 'permanent' | 'day-only' } }
+function readDecisionMap() {
+  try {
+    const stored = localStorage.getItem(LS_SUB_DECISIONS);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+  } catch(e) { return {}; }
+}
+// What the lifter has already decided about one Session's Substitutions.
+function decisionsFor(recordId) {
+  const mine = readDecisionMap()[recordId];
+  return (mine && typeof mine === 'object' && !Array.isArray(mine)) ? mine : {};
+}
+function saveDecisions(recordId, decisions) {
+  try {
+    const map = readDecisionMap();
+    map[recordId] = decisions;
+    // The Session store is capped, so decisions filed against records that have
+    // aged out are dead weight. Keep only the ones history can still show.
+    const live = {};
+    getAllSessions().forEach(s => { if (map[s.id]) live[s.id] = map[s.id]; });
+    localStorage.setItem(LS_SUB_DECISIONS, JSON.stringify(live));
+  } catch(e) {}
+}
+function markDecided(recordId, key, decision) {
+  const decisions = decisionsFor(recordId);
+  decisions[key] = decision;
+  saveDecisions(recordId, decisions);
+}
+
+// The Substitutions in a Session record that are still open questions, each
+// with the Movement the Program prescribes where it was made and the scheme
+// the Session ended with.
+function undecidedSubstitutions(record) {
+  if (!record) return [];
+  const decided = decisionsFor(record.id);
+  const dayOverrides = loadOverrides()[record.dayType] || {};
+  const out = [];
+  ['primaries', 'ar7', 'accessories'].forEach(group => {
+    const entries = record[group] || {};
+    Object.keys(entries).forEach(key => {
+      const entry = entries[key];
+      if (!entry || !entry.substitutedFor) return;
+      // Answered already, on this Summary or an earlier visit to it.
+      if (decided[key]) return;
+      // An override is keyed by what the Program prescribes at this position,
+      // never by what the lifter was looking at: a day-only Substitution made
+      // on top of a Permanent Substitution records the permanent substitute as
+      // its substitutedFor, so that name would file the override under the
+      // wrong key and it would silently never apply.
+      const prescribed = prescribedNameAt(record.dayType, key);
+      // The Day no longer prescribes anything here, so there is nothing to
+      // promote against. Nothing to ask either.
+      if (!prescribed) return;
+      // Already permanent for this Day, which is the lifter having decided
+      // during the Session by ticking the box on the form.
+      const standing = dayOverrides[prescribed];
+      if (standing && standing.name === entry.name) return;
+      // replaced is what the lifter swapped out today and so what the row
+      // names; prescribed is what the override is filed under. On a Day
+      // carrying a Permanent Substitution the two differ.
+      out.push({ key: key, name: entry.name || '', replaced: entry.substitutedFor,
+                 prescribed: prescribed, sets: entry.setsStr || '' });
+    });
+  });
+  return out;
+}
+
+// One row per undecided Substitution, each with its own keep action, so a
+// permanently gone machine and a temporarily busy one can be answered
+// differently. The single dismiss answers the rest as day-only. Substitute
+// names and an imported Program's Day label are lifter-typed, so both are
+// escaped before they reach innerHTML.
+function renderPromotionPrompt(record) {
+  const rows = undecidedSubstitutions(record);
+  if (!rows.length) return '';
+  const day = DAYS.find(d => d.id === record.dayType);
+  const label = day && day.label ? day.label : String(record.dayType || '').toUpperCase();
+  return '<div class="summary-promote"><div class="summary-promote-title">Keep these swaps?</div>' +
+    '<div class="summary-promote-sub">Keeping one starts every future ' + escHtml(label) +
+    ' with it, at the scheme you finished on. Otherwise it stays a one-off.</div>' +
+    rows.map(r => '<div class="summary-promote-row"><div class="summary-promote-what">' +
+      '<div class="summary-promote-name">' + escHtml(r.name) + '</div>' +
+      '<div class="summary-promote-instead">instead of <strong>' + escHtml(r.replaced) + '</strong></div></div>' +
+      '<button class="summary-promote-keep" onclick="promoteSubstitution(\'' + record.id + '\',\'' + r.key + '\')">Keep</button>' +
+      '</div>').join('') +
+    '<button class="summary-promote-dismiss" onclick="dismissPromotionPrompt(\'' + record.id + '\')">Today only</button></div>';
+}
+
+// Promotes one Substitution to permanent. Writes an override carrying the
+// scheme the Session ended with, so the lifter does not re-enter it next week,
+// and nothing else: the completed record still says what happened that day.
+window.promoteSubstitution = function(recordId, key) {
+  const record = getAllSessions().find(s => s.id === recordId);
+  if (!record) return;
+  const row = undecidedSubstitutions(record).find(r => r.key === key);
+  if (!row) return;
+  setOverride(record.dayType, row.prescribed, row.name, row.sets);
+  markDecided(recordId, key, 'permanent');
+  renderSummary(record);
+};
+// The lifter is done answering: every Substitution still open was a one-off.
+// Recorded as such so the question does not come back for this Session.
+window.dismissPromotionPrompt = function(recordId) {
+  const record = getAllSessions().find(s => s.id === recordId);
+  if (!record) return;
+  const open = undecidedSubstitutions(record);
+  if (!open.length) return;
+  const decisions = decisionsFor(recordId);
+  open.forEach(r => { decisions[r.key] = 'day-only'; });
+  saveDecisions(recordId, decisions);
+  renderSummary(record);
+};
+
 function renderFeelSurvey(record) {
   const f = (window._feelDraft && window._feelDraft.recordId === record.id)
     ? window._feelDraft.data : { energy: 0, effort: 0, recovery: 0 };
@@ -3061,6 +3657,16 @@ window.toggleEditLog = function(recordId) {
   }
 };
 
+// A substituted Movement is logged under the substitute's name, so that is
+// the name to correct numbers against; saying what it replaced keeps an
+// unfamiliar name in an old Session from being a puzzle. Every name here
+// goes through escHtml: a substitute's is lifter-typed free text.
+function editLogName(entry) {
+  return '<span class="edit-log-group-name">' + escHtml(entry.name) + '</span>' +
+    (entry.substitutedFor
+      ? '<span class="edit-log-group-sub">replaces <strong>' + escHtml(entry.substitutedFor) + '</strong></span>'
+      : '');
+}
 function renderEditLog(record) {
   let groups = '';
   Object.keys(record.primaries || {}).forEach(function(key) {
@@ -3073,13 +3679,13 @@ function renderEditLog(record) {
         '<input class="log-input ' + (set.reps?'filled':'') + '" type="number" inputmode="numeric" placeholder="reps" value="' + (set.reps||'') + '" oninput="updateSessionPrimary(\'' + record.id + '\',\'' + key + '\',' + idx + ',\'reps\',this.value)"/>' +
         '</div>';
     }).join('');
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Primary</span><span class="edit-log-group-name">' + esc(p.name) + '</span></div><div class="log-sets">' + setsHtml + '</div></div>';
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Primary</span>' + editLogName(p) + '</div><div class="log-sets">' + setsHtml + '</div></div>';
   });
   Object.keys(record.ar7 || {}).forEach(function(key) {
     const a = record.ar7[key];
     let dotsHtml = '';
     for (let r = 0; r < 7; r++) dotsHtml += '<button class="log-ar7-dot ' + (r < a.rounds ? 'done' : '') + '" aria-label="Round ' + (r+1) + '" aria-pressed="' + (r < a.rounds) + '" onclick="updateSessionAr7Rounds(\'' + record.id + '\',\'' + key + '\',' + r + ')"></button>';
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">AR-7</span><span class="edit-log-group-name">' + esc(a.name) + '</span></div>' +
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">AR-7</span>' + editLogName(a) + '</div>' +
       '<div class="log-sets"><div class="log-set-row"><span class="log-set-num">LOAD</span><input class="log-input ' + (a.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="lb" value="' + (a.weight||'') + '" oninput="updateSessionAr7Weight(\'' + record.id + '\',\'' + key + '\',this.value)" style="flex:0 0 90px"/><span class="log-input-x" style="font-size:0.625rem">lb</span></div></div>' +
       '<div class="log-ar7" style="margin-top:10px"><span class="log-ar7-label">Rounds</span><div class="log-ar7-dots">' + dotsHtml + '</div><span class="log-ar7-count">' + a.rounds + '/7</span></div></div>';
   });
@@ -3095,7 +3701,7 @@ function renderEditLog(record) {
     }).join('');
     let rpeDots = '';
     for (let r = 1; r <= 5; r++) rpeDots += '<button class="log-rpe-dot ' + (acc.rpe===r?'selected':'') + '" aria-label="RPE ' + r + '" aria-pressed="' + (acc.rpe===r) + '" onclick="updateSessionRpe(\'' + record.id + '\',\'' + key + '\',' + r + ')">' + r + '</button>';
-    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Accessory</span><span class="edit-log-group-name">' + esc(acc.name) + '</span></div><div class="log-sets">' + setsHtml + '</div><div class="log-rpe" style="margin-top:10px"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div></div>';
+    groups += '<div class="edit-log-group"><div class="edit-log-group-hdr"><span class="edit-log-group-type">Accessory</span>' + editLogName(acc) + '</div><div class="log-sets">' + setsHtml + '</div><div class="log-rpe" style="margin-top:10px"><span class="log-rpe-label">RPE</span><div class="log-rpe-dots">' + rpeDots + '</div></div></div>';
   });
   return groups || '<p style="font-size:0.75rem;color:var(--c-on-surface-v);padding:8px 0">No logged data to edit.</p>';
 }
@@ -3295,8 +3901,17 @@ function renderHistoryPage() {
     arr.slice().reverse().slice(0,5).forEach((s, i) => {
       const d = new Date(s.date), dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       const isToday = new Date().toDateString() === d.toDateString();
-      const label = 'Open ' + (day.label || dt) + ' session from ' + (isToday ? 'today, ' : '') + dateStr + ', score ' + s.score.total;
-      rows += '<button type="button" class="session-row" aria-label="' + esc(label) + '" onclick="openSessionSummary(\'' + s.id + '\')"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span><span class="session-row-right"><span class="session-row-score" style="' + (isWarn&&i===0?'color:var(--c-warn)':'') + '">' + s.score.total + '</span><span class="session-row-go" aria-hidden="true">View<span class="mi">chevron_right</span></span></span></button>';
+      // Marks the Session, so an unusual week is findable. Deliberately not
+      // folded into the average or the sparkline above: the Score of a
+      // substituted Session stands on the same footing as any other.
+      const subbed = substitutionsIn(s).length > 0;
+      const subMark = subbed
+        ? '<span class="session-row-sub" title="Contained a Substitution" aria-hidden="true"><span class="mi">swap_horiz</span>Substituted</span>'
+        : '';
+      // The row is one labelled button, so the marker belongs in the label too:
+      // without it a screen-reader user silently loses what a sighted one is shown.
+      const label = 'Open ' + (day.label || dt) + ' session from ' + (isToday ? 'today, ' : '') + dateStr + ', score ' + s.score.total + (subbed ? ', contained a Substitution' : '');
+      rows += '<button type="button" class="session-row" aria-label="' + esc(label) + '" onclick="openSessionSummary(\'' + s.id + '\')"><span style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0"><span class="session-row-date ' + (isToday?'today':'') + '">' + (isToday?'Today \xB7 ':'') + dateStr + '</span>' + subMark + '</span><span class="session-row-right"><span class="session-row-score" style="' + (isWarn&&i===0?'color:var(--c-warn)':'') + '">' + s.score.total + '</span><span class="session-row-go" aria-hidden="true">View<span class="mi">chevron_right</span></span></span></button>';
     });
     html += '<div class="day-card ' + (isWarn?'warn':'') + '"><div class="day-card-header"><div class="day-card-day" style="color:' + ac(day.accent) + '">' + esc(day.label) + (day.day?' \xB7 ' + esc(day.day):'') + '</div><div class="day-card-avg">Avg <strong>' + avg + '</strong> \xB7 ' + arr.length + ' session' + (arr.length===1?'':'s') + '</div></div><div class="sparkline-wrap">' + spark + '</div><div class="day-card-sessions">' + rows + '</div></div>';
   });
@@ -3364,6 +3979,131 @@ function openBaselineModal(id) {
   setTimeout(() => document.getElementById('modalWeight').focus(), 300);
 }
 function closeBaselineModal() { document.getElementById('baselineModal').classList.remove('open'); editingBaselineId = null; }
+
+// ── SUBSTITUTE MODAL ───────────────────────────────────────
+function setSubHint(text, isError) {
+  const el = document.getElementById('subModalHint');
+  el.textContent = text;
+  el.classList.toggle('modal-error', !!isError);
+}
+window.openSubstituteModal = function(cat, key) {
+  const entry = entryFor(cat, key);
+  if (!entry) return;
+  substituting = { cat, key };
+  // What the lifter is replacing: the prescribed Movement, still, when they are
+  // correcting a Substitution they already made.
+  const replacing = entry.substitutedFor || entry.name;
+  document.getElementById('subPrescribedName').textContent = replacing;
+  const input = document.getElementById('subNameInput');
+  input.value = entry.substitutedFor ? entry.name : '';
+  input.maxLength = SUB_NAME_MAX;
+
+  // The scheme starts where the Program left it, so keeping it takes no effort.
+  const range = repRangeOf(entry, cat);
+  const isAr7 = cat === 'ar7';
+  document.getElementById('subSetsInput').value = entry.sets ? entry.sets.length : (entry.target ? entry.target.numSets : 1);
+  document.getElementById('subRepLowInput').value = range.repLow;
+  document.getElementById('subRepHighInput').value = range.repHigh;
+  // AR-7 is seven rounds in both the renderer and the scorer, so it has no set
+  // count to offer.
+  document.getElementById('subSetsField').style.display = isAr7 ? 'none' : '';
+  document.getElementById('subSchemeRow').classList.toggle('no-sets', isAr7);
+  // Only a Substitution has a prescribed Movement to go back to.
+  document.getElementById('subRevertBtn').style.display = entry.substitutedFor ? '' : 'none';
+
+  // Day-only is the default: the common case is a machine that is busy right
+  // now, and that must never silently change what the Day prescribes.
+  document.getElementById('subPermanentInput').checked = false;
+
+  setSubHint('Scored exactly as ' + replacing + ' would have been. Your Program is unchanged.');
+  document.getElementById('substituteModal').classList.add('open');
+  setTimeout(() => { try { input.focus(); } catch(e) {} }, 50);
+};
+function closeSubstituteModal() {
+  document.getElementById('substituteModal').classList.remove('open');
+  substituting = null;
+}
+function readSchemeFields(cat, entry) {
+  const whole = el => {
+    const n = parseInt(document.getElementById(el).value, 10);
+    return (isFinite(n) && n > 0) ? n : null;
+  };
+  const numSets = cat === 'ar7' ? (entry.target ? entry.target.numSets : 1) : whole('subSetsInput');
+  const repLow = whole('subRepLowInput');
+  let repHigh = whole('subRepHighInput');
+  if (numSets === null) return { error: 'Sets must be a whole number, 1 or more.' };
+  if (repLow === null || repHigh === null) return { error: 'Reps must be whole numbers, 1 or more.' };
+  if (numSets > SUB_SETS_MAX) return { error: 'That is more than ' + SUB_SETS_MAX + ' sets.' };
+  if (repLow > SUB_REPS_MAX || repHigh > SUB_REPS_MAX) return { error: 'That is more than ' + SUB_REPS_MAX + ' reps.' };
+  // A range entered backwards is taken as a single number rather than refused.
+  if (repHigh < repLow) repHigh = repLow;
+  return { numSets: numSets, repLow: repLow, repHigh: repHigh };
+}
+function saveSubstitution() {
+  if (!substituting) return closeSubstituteModal();
+  const cat = substituting.cat;
+  const entry = entryFor(cat, substituting.key);
+  if (!entry) return closeSubstituteModal();
+  const input = document.getElementById('subNameInput');
+
+  const scheme = readSchemeFields(cat, entry);
+  if (scheme.error) { setSubHint(scheme.error, true); return; }
+
+  const name = String(input.value || '').trim();
+  if (!name) {
+    setSubHint('Type what you are doing instead.', true);
+    try { input.focus(); } catch(e) {}
+    return;
+  }
+  // Cutting sets throws away logged work, so say so before doing it.
+  const lost = setsLostBy(entry, scheme.numSets);
+  if (lost > 0 && !confirm('Dropping to ' + scheme.numSets + (scheme.numSets === 1 ? ' set' : ' sets') +
+      ' discards ' + lost + (lost === 1 ? ' set you have already logged.' : ' sets you have already logged.') +
+      ' Continue?')) {
+    setSubHint('Left as it was. Nothing was changed.');
+    return;
+  }
+
+  substituteEntry(entry, name, cat);
+  applyScheme(entry, cat, scheme.numSets, scheme.repLow, scheme.repHigh);
+  // Marked permanent: recorded against the Movement the Program prescribes on
+  // this Day, so every future Session of that Day starts with it in place. A
+  // day-only Substitution writes nothing, which is what leaves a Permanent
+  // Substitution underneath it intact.
+  if (session && document.getElementById('subPermanentInput').checked) {
+    const prescribed = prescribedNameAt(session.dayType, substituting.key);
+    if (prescribed) setOverride(session.dayType, prescribed, entry.name, entry.setsStr);
+  }
+  closeSubstituteModal();
+  saveDraft(); render();
+}
+// A machine freeing up should not leave the lifter stuck with their workaround,
+// so a Substitution can go back to the prescribed Movement while the Session is
+// still active.
+function revertSubstitution() {
+  if (!substituting) return closeSubstituteModal();
+  const cat = substituting.cat, key = substituting.key;
+  const entry = entryFor(cat, key);
+  if (!entry || !entry.substitutedFor) return closeSubstituteModal();
+  const item = prescribedItemFor(cat, key);
+  // The Day no longer prescribes anything in this position, so there is nothing
+  // to go back to. Leave the Substitution standing rather than guess at one.
+  if (!item) { setSubHint('This Movement is no longer in the Day, so there is nothing to go back to.', true); return; }
+  // Reverting discards logged work, so say what it costs before doing it. The
+  // Movement being gone back to is the item's name, never the entry's: those
+  // two read the same whenever the lookup resolves a Substitution to itself,
+  // and a sentence naming the substitute on both sides tells the lifter they
+  // are going back to what they are already doing.
+  const logged = loggedValuesIn(entry);
+  if (logged > 0 && !confirm('Going back to ' + item.name + ' clears the ' +
+      (logged === 1 ? 'value' : logged + ' values') + ' you logged against ' + entry.name + '. Continue?')) {
+    setSubHint('Left as it was. Nothing was changed.');
+    return;
+  }
+  revertEntry(entry, item, cat);
+  closeSubstituteModal();
+  saveDraft(); render();
+}
 function updateModalPreview() {
   const w = parseFloat(document.getElementById('modalWeight').value), r = parseInt(document.getElementById('modalReps').value);
   const p = document.getElementById('modalOrmPreview');
@@ -3404,13 +4144,57 @@ function renderProgPage() {
     '<div class="stat-cards"><div class="stat-card"><div class="stat-label">Training Days</div><div class="stat-val-row"><span class="stat-num">' + trainDays.length + '</span><span class="stat-unit">/Week</span></div></div>' +
     '<div class="stat-card"><div class="stat-label">Baselines</div><div class="stat-val-row"><span class="stat-num">' + BASELINES.length + '</span><span class="stat-unit">Lifts</span></div></div></div>' +
     '</div>' +
-    trainDays.map(day =>
-      '<div class="prog-day-card">' +
-      '<div class="prog-day-header"><div class="prog-day-dot" style="background:' + ac(day.accent) + '"></div><h3 style="font-family:var(--font-h);font-weight:800;font-size:1.125rem;color:' + ac(day.accent) + ';margin:0">' + esc(day.label) + '</h3>' + (day.duration ? '<span style="font-family:var(--font-b);font-size:0.75rem;color:var(--c-on-surface-v)">' + esc(day.duration) + '</span>' : '') + '</div>' +
-      (day.notes ? '<p style="font-size:0.8125rem;color:var(--c-on-surface-v);line-height:1.6;margin-bottom:1rem">' + esc(day.notes) + '</p>' : '') +
-      '<div class="schedule-list">' + day.sections.map(sec => '<div class="schedule-item"><strong>' + esc(sec.title) + '</strong>' + (sec.items.length ? ' \xB7 ' + esc(sec.items.map(i=>i.name).slice(0,3).join(', ')) + (sec.items.length>3?'…':'') : '') + '</div>').join('') + '</div></div>'
-    ).join('');
+    trainDays.map(day => {
+      // Through the resolver, so the Program view shows the lifter what they are
+      // actually going to do. The Day in DAYS is the Program definition and a
+      // Substitution never writes to it — the clone is what gets rendered.
+      const eff = effectiveDay(day);
+      const dayIndex = DAYS.indexOf(day);
+      return '<div class="prog-day-card">' +
+      '<div class="prog-day-header"><div class="prog-day-dot" style="background:' + ac(eff.accent) + '"></div><h3 style="font-family:var(--font-h);font-weight:800;font-size:1.125rem;color:' + ac(eff.accent) + ';margin:0">' + esc(eff.label) + '</h3>' + (eff.duration ? '<span style="font-family:var(--font-b);font-size:0.75rem;color:var(--c-on-surface-v)">' + esc(eff.duration) + '</span>' : '') + '</div>' +
+      (eff.notes ? '<p style="font-size:0.8125rem;color:var(--c-on-surface-v);line-height:1.6;margin-bottom:1rem">' + esc(eff.notes) + '</p>' : '') +
+      '<div class="schedule-list">' + eff.sections.map((sec, si) =>
+        '<div class="schedule-item"><strong>' + esc(sec.title) + '</strong>' + (sec.items.length ? ' \xB7 ' + esc(sec.items.map(i=>i.name).slice(0,3).join(', ')) + (sec.items.length>3?'…':'') : '') + '</div>' +
+        // Each Substitution gets its own row under the Section it stands in, so
+        // it is marked and labelled even when the Section summary above has run
+        // out of room to list it.
+        sec.items.map((i, ii) => i.substitutedFor ? progSubRow(dayIndex, si, ii, i) : '').join('')
+      ).join('') + '</div></div>';
+    }).join('');
 }
+// One permanently substituted Movement on a Program Day card: marked as a
+// Substitution, labelled with the Movement it stands in for, and carrying the
+// control that reverts it in place, without starting a Session.
+//
+// Positions rather than names reach the handler. A prescribed Movement name is
+// Program text that can hold a quote, and surviving a JS string literal inside
+// an HTML attribute is not something escHtml does.
+function progSubRow(dayIndex, si, ii, item) {
+  return '<div class="prog-sub-row">' +
+    '<div class="sub-marker"><span class="sub-marker-badge">Substituted</span>' +
+    '<span class="sub-marker-label"><strong>' + escHtml(item.name) + '</strong> replaces <strong>' + escHtml(item.substitutedFor) + '</strong></span></div>' +
+    '<button class="prog-sub-revert" onclick="revertPermanentHere(' + dayIndex + ',' + si + ',' + ii + ')">Revert</button>' +
+    '</div>';
+}
+// Undoes a Permanent Substitution from the Program view, in place: the Day goes
+// back to prescribing what the Program names, and the next Session starts from
+// it. Nothing is lost that the form cannot make again, so unlike a mid-Session
+// revert — which discards logged work — this does not ask first.
+function revertPermanentSubstitution(dayId, prescribedName) {
+  if (!dayId || !prescribedName) return false;
+  const forDay = loadOverrides()[dayId];
+  if (!forDay || !forDay[prescribedName]) return false;
+  removeOverride(dayId, prescribedName);
+  renderProgPage();
+  // The Workout view reads the same overrides, so it is brought back in step.
+  render();
+  return true;
+}
+window.revertPermanentHere = function(dayIndex, si, ii) {
+  const day = DAYS[dayIndex];
+  if (!day) return false;
+  return revertPermanentSubstitution(day.id, prescribedNameAt(day.id, si + '-' + ii));
+};
 
 // ── RENDER: IMPORT PAGE ────────────────────────────────────
 function openImportPage() {
@@ -3649,9 +4433,13 @@ function render() {
   document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchDay(b.dataset.dayId)));
   revealActiveTab(tabsEl);
 
-  const day = DAYS.find(d => d.id === activeDay);
-  if (!day) return;
-  if (day.isOff) { renderOffDays(day); return; }
+  const raw = DAYS.find(d => d.id === activeDay);
+  if (!raw) return;
+  // The Off Day view resolves the Day for itself; everything past this line
+  // works from the effective Day, so no surface shows the lifter a Movement a
+  // Permanent Substitution has already taken out of the Day.
+  if (raw.isOff) { renderOffDays(raw); return; }
+  const day = effectiveDay(raw);
   if (session && session.dayType === activeDay) { renderSessionMode(day); return; }
 
   const lastScore = lastScoreForDay(day.id);
@@ -3680,7 +4468,7 @@ function render() {
     const borderStyle = isAr7 ? 'style="border-left-color:' + ac(day.accent) + '"' : '';
     const itemsHtml = sec.items.map(item => {
       const setsStr = displaySets(item, baselines);
-      return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + esc(item.name) + '</div>' + (item.note?'<div class="section-item-note">'+esc(item.note)+'</div>':'') + (classifySection(sec)==='skip'?'':lastTimeHtml(item.name, history)) + '</div><span class="section-item-sets" style="color:' + ac(day.accent) + '">' + esc(setsStr) + '</span></div>';
+      return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + esc(item.name) + '</div>' + subMarkerHtml(item) + (item.note?'<div class="section-item-note">'+esc(item.note)+'</div>':'') + (classifySection(sec)==='skip'?'':lastTimeHtml(item.name, history)) + '</div><span class="section-item-sets" style="color:' + ac(day.accent) + '">' + esc(setsStr) + '</span></div>';
     }).join('');
     return '<details class="section-accordion' + (isAr7?' ar7':'') + '" ' + (isOpen?'open':'') + ' ' + borderStyle + '><summary class="section-summary" data-key="' + key + '" onclick="toggleSection(\'' + key + '\',event)"><div class="section-summary-left"><span class="mi" style="' + iconStyle + '">' + (sec.icon||'layers') + '</span><span class="section-title" ' + titleStyle + '>' + esc(sec.title) + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
   }).join('');
@@ -3693,6 +4481,15 @@ function render() {
     '<div class="sections-list">' + sectionsHtml + '</div>';
 }
 
+// Marks a Movement as a Substitution and labels it with what it replaced, so a
+// Permanent Substitution never reads as the Program having changed on its own.
+// Reads substitutedFor off the effective Day rather than the override store,
+// because the resolver has already worked out which Movement was replaced.
+function subMarkerHtml(item) {
+  if (!item || !item.substitutedFor) return '';
+  return '<div class="sub-marker"><span class="sub-marker-badge">Substituted</span>' +
+    '<span class="sub-marker-label">replaces <strong>' + escHtml(item.substitutedFor) + '</strong></span></div>';
+}
 // Tabs follow the week, Monday first, by the earliest weekday each day covers,
 // so a Mon–Wed or Sun–Wed off-days tab sits leftmost. Days with no weekday keep
 // their file order after those. Programs with no weekday map keep file order.
@@ -3711,7 +4508,11 @@ function revealActiveTab(strip) {
   else if (t.right > s.right) strip.scrollLeft += t.right - s.right;
 }
 
-function renderOffDays(day) {
+function renderOffDays(rawDay) {
+  // Through the resolver like every other surface that shows a Day's Movements.
+  // An Off Day can carry prescribed Movements from an imported Program, so a
+  // Permanent Substitution has to show here too, not only on a Training Day.
+  const day = effectiveDay(rawDay);
   // If the off day has sections defined in the CSV, render them
   if (day.sections && day.sections.length > 0) {
     const baselines = loadBaselines();
@@ -3719,7 +4520,7 @@ function renderOffDays(day) {
       const isAr7 = !!sec.ar7;
       const itemsHtml = sec.items.map(item => {
         const setsStr = displaySets(item, baselines);
-        return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + esc(item.name) + '</div>' + (item.note?'<div class="section-item-note">'+esc(item.note)+'</div>':'') + '</div><span class="section-item-sets" style="color:' + ac(day.accent) + '">' + esc(setsStr) + '</span></div>';
+        return '<div class="section-item"><div class="section-item-left"><div class="section-item-name">' + esc(item.name) + '</div>' + subMarkerHtml(item) + (item.note?'<div class="section-item-note">'+esc(item.note)+'</div>':'') + '</div><span class="section-item-sets" style="color:' + ac(day.accent) + '">' + esc(setsStr) + '</span></div>';
       }).join('');
       const borderStyle = isAr7 ? 'style="border-left-color:' + ac(day.accent) + '"' : '';
       return '<details class="section-accordion' + (isAr7?' ar7':'') + '" open ' + borderStyle + '><summary class="section-summary"><div class="section-summary-left"><span class="mi" style="color:var(--c-on-surface-v)">' + (sec.icon||'layers') + '</span><span class="section-title">' + esc(sec.title) + '</span></div><span class="mi section-caret">expand_more</span></summary><div class="section-body">' + itemsHtml + '</div></details>';
@@ -3877,6 +4678,19 @@ function displaySets(item, baselines) {
   const b = baselineFor(item, baselines);
   return b ? item.sets + ' @ ' + workingRange(b.orm, b.pctLow, b.pctHigh) : item.sets;
 }
+// A Session snapshot calls the prescribed scheme `setsStr`, because `sets`
+// holds the logged work. The helpers above were written against a program
+// Movement, so session mode reads its snapshot through here.
+function snapshotAsMovement(entry) {
+  return { name: entry.name, sets: entry.setsStr, baselineId: entry.baselineId };
+}
+// Movement names reach the screen as HTML, and a substitute's name is typed by
+// the lifter, so it cannot be trusted to be plain text.
+function escHtml(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 function workingRange(orm, lo, hi) { const a=Math.round(orm*lo/2.5)*2.5, b=Math.round(orm*hi/2.5)*2.5; return a===b ? a+' lb' : a+'\u2013'+b+' lb'; }
 function fmtTime(s) { const m=Math.floor(s/60),sec=s%60; return m+':'+(sec<10?'0':'')+sec; }
 function calculate() {
@@ -4020,6 +4834,11 @@ document.getElementById('modalSaveBtn').addEventListener('click', saveBaseline);
 document.getElementById('modalCancelBtn').addEventListener('click', closeBaselineModal);
 document.getElementById('modalResetBtn').addEventListener('click', resetBaseline);
 document.getElementById('baselineModal').addEventListener('click', e => { if(e.target===document.getElementById('baselineModal')) closeBaselineModal(); });
+document.getElementById('subSaveBtn').addEventListener('click', saveSubstitution);
+document.getElementById('subRevertBtn').addEventListener('click', revertSubstitution);
+document.getElementById('subCancelBtn').addEventListener('click', closeSubstituteModal);
+document.getElementById('substituteModal').addEventListener('click', e => { if(e.target===document.getElementById('substituteModal')) closeSubstituteModal(); });
+document.getElementById('subNameInput').addEventListener('keyup', e => { if(e.key==='Enter') saveSubstitution(); });
 document.getElementById('modalWeight').addEventListener('input', updateModalPreview);
 document.getElementById('modalReps').addEventListener('input', updateModalPreview);
 document.getElementById('modalWeight').addEventListener('keyup', e => { if(e.key==='Enter') saveBaseline(); });
@@ -4031,6 +4850,9 @@ function closeTopLayer() {
   if (open('timerSettingsOverlay')) { closeTimerSettings(); return true; }
   // The resume prompt needs an answer: dismissing it and then starting a session would overwrite the saved one.
   if (open('draftModal')) return true;
+  // The substitute modal sits at the same z-index as the baseline modal but
+  // later in the DOM, so when both are up it is the one on top.
+  if (open('substituteModal')) { closeSubstituteModal(); return true; }
   if (open('baselineModal')) { closeBaselineModal(); return true; }
   if (open('summaryPage')) { closeSummary(); return true; }
   if (open('historyPage')) { closeHistoryPage(); return true; }
