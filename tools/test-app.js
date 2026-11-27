@@ -14,7 +14,7 @@
 //
 const { test, describe, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadApp, loadAppWithProgram, findSection, plain } = require('./app-harness.js');
+const { loadApp, bootApp, loadAppWithProgram, findSection, plain } = require('./app-harness.js');
 
 // Field Guide PPL is the bundled default and has no AR-7 Sections; AR-7 Hybrid
 // has all four Section kinds. Tests pick whichever one exercises the behaviour.
@@ -5718,5 +5718,259 @@ describe('a backup taken before any Permanent Substitution', () => {
     const m = firstLogged(restored, restored.DAYS.find(d => d.id === day.id), 'primary');
     assert.equal(restored.initSession(day.id).primaries[m.key].name, m.name,
       'so the next Session prescribes what the Program prescribes');
+  });
+});
+
+// ── FOLLOW-UP 06: AR-7, IMPORTED PROGRAMS, COLD START, HISTORY ─
+//
+// Places Substitutions had never been run: an AR-7 Section scored end to end,
+// a Program the lifter imported rather than one that ships, a device with
+// nothing stored at all, and a history list holding several Sessions.
+
+// Logs the active Session with one AR-7 Movement at a chosen number of rounds,
+// tapped on its round boxes the way a lifter ticks them, and every other
+// Movement in full. Returns what the Session view showed once they were
+// ticked, then files the Session.
+function finishWithRounds(app, day, key, rounds) {
+  const s = app.session;
+  Object.values(s.primaries).forEach(p => fillSets(p, 200, p.target.repLow));
+  Object.values(s.accessories).forEach(a => { fillSets(a, 50, a.target.repLow); a.rpe = 3; });
+  Object.keys(s.ar7).forEach(k => { s.ar7[k].weight = '40'; if (k !== key) s.ar7[k].rounds = 7; });
+  app.toggleAr7Round(key, rounds - 1);
+  const shown = renderActive(app, day);
+  s.feel = { energy: 4, effort: 4, recovery: 4 };
+  app.finishSession();
+  const all = app.getAllSessions();
+  return { shown, record: all[all.length - 1] };
+}
+
+describe('a Substitution in an AR-7 Section', () => {
+  // Day-only through the form, and Permanent: substituted in one Session and
+  // standing in at the start of the next, which is the one scored.
+  const routes = {
+    'day-only': (app, day, m) => {
+      startOn(app, day);
+      return substituteWithScheme(app, m.cat, m.key, 'Cable Fly', schemeFor('ar7'));
+    },
+    permanent: (app, day, m) => {
+      startOn(app, day);
+      const ok = substitutePermanently(app, m.cat, m.key, 'Cable Fly', schemeFor('ar7'));
+      logAndFinish(app);
+      nextMillisecond();
+      startOn(app, day);
+      return ok;
+    },
+  };
+
+  Object.keys(routes).forEach(route => {
+    test(route + ': the substitute scores its rounds out of seven, as the prescribed Movement does', () => {
+      [3, 7].forEach(rounds => {
+        const control = loadAppWithProgram(AR7);
+        const day = dayWithSections(control, ['ar7']);
+        const m = firstLogged(control, day, 'ar7');
+        startOn(control, day);
+        const expected = finishWithRounds(control, day, m.key, rounds).record;
+        assert.equal(expected.ar7[m.key].name, m.name, 'the control logs the prescribed Movement');
+
+        const app = loadAppWithProgram(AR7);
+        assert.ok(routes[route](app, app.DAYS.find(d => d.id === day.id), m),
+          route + ': the form accepted the substitute');
+        assert.equal(app.session.ar7[m.key].name, 'Cable Fly', 'the Session logs the substitute');
+        const { shown, record } = finishWithRounds(app, day, m.key, rounds);
+
+        assert.ok(shown.includes(rounds + '/7'), rounds + ' rounds: the Session view counts the substitute out of seven');
+        assert.equal(record.ar7[m.key].name, 'Cable Fly', 'the stored Session holds the substitute');
+        assert.equal(record.ar7[m.key].rounds, rounds, 'with the rounds the lifter ticked');
+        const others = Object.keys(record.ar7).length - 1;
+        assert.equal(app.scoreAr7(record), ((rounds / 7) * 100 + others * 100) / (others + 1),
+          rounds + ' rounds: the substitute scores ' + rounds + ' out of seven, whatever range it was set to');
+        assert.deepEqual(plain(record.score), plain(expected.score),
+          rounds + ' rounds: the Session scores what the same work on the prescribed Movement scores');
+      });
+    });
+  });
+});
+
+// The import template the Import page offers, picked as a CSV file the way a
+// lifter imports a Program of their own.
+function importTemplate(app) {
+  app.handleProgramFile(app.fileOf('my-program.csv', app.generateCSVTemplate()));
+  const status = app.document.getElementById('importStatus').textContent;
+  assert.ok(status.includes('imported'), 'the import succeeded: ' + status);
+  assert.equal(app.builtInById(app.currentProgramId()), null, 'an Imported Program is active');
+  return app.PROGRAM;
+}
+
+describe('Substitutions on an Imported Program', () => {
+  test('day-only and Permanent Substitutions work as they do on a Built-In Program', () => {
+    const app = loadAppWithProgram(PPL);
+    const imported = importTemplate(app);
+    const day = dayWithSections(app, ['primary', 'accessory']);
+    const p = firstLogged(app, day, 'primary');
+    const a = firstLogged(app, day, 'accessory');
+    startOn(app, day);
+
+    assert.ok(substitutePermanently(app, p.cat, p.key, 'Machine Chest Press', { sets: 4, repLow: 6, repHigh: 8 }),
+      'the form accepted the Permanent Substitution');
+    assert.ok(substituteVia(app, a.cat, a.key, 'Cable Lateral Raise'), 'and the day-only one');
+    const record = logAndFinish(app);
+
+    assert.equal(record.primaries[p.key].substitutedFor, p.name, 'the Session records what the substitute replaced');
+    assert.equal(record.accessories[a.key].substitutedFor, a.name);
+    const summary = summaryWithoutEditLog(app, record);
+    [['Machine Chest Press', p.name], ['Cable Lateral Raise', a.name]].forEach(([to, from]) => {
+      assert.ok(summary.includes(to) && summary.includes(from), 'the Summary names ' + to + ' and the ' + from + ' it replaced');
+    });
+    assert.equal(renderHistory(app).split('Substituted').length - 1, 1, 'history marks the Session');
+
+    assert.deepEqual(plain(app.readOverrideMap())[imported.id][day.id][p.name],
+      { name: 'Machine Chest Press', sets: '4 × 6–8' }, 'the Permanent Substitution is kept under the Imported Program');
+    const next = app.initSession(day.id);
+    assert.equal(next.primaries[p.key].name, 'Machine Chest Press', 'the next Session starts with it');
+    assert.equal(next.primaries[p.key].setsStr, '4 × 6–8', 'at its own scheme');
+    assert.equal(next.accessories[a.key].name, a.name, 'and the day-only one is not carried into it');
+    const prog = progHtml(app);
+    assert.ok(subRowFor(app, prog, 'Machine Chest Press', p.name), 'the Program view marks the Permanent Substitution');
+    assert.ok(!prog.includes('Cable Lateral Raise'), 'and not the day-only one');
+  });
+
+  test('a Permanent Substitution stays with the Imported Program and does not reach a Built-In one', () => {
+    const app = loadAppWithProgram(PPL);
+    const builtInId = app.currentProgramId();
+    const imported = importTemplate(app);
+    const day = dayWithSections(app, ['primary']);
+    const p = firstLogged(app, day, 'primary');
+    const builtInDay = app.builtInById(builtInId).days.find(d => d.id === day.id);
+    assert.ok(builtInDay && movementNamed(builtInDay, p.name),
+      'the Built-In prescribes ' + p.name + ' on a Day of the same id, so a leak would land on it');
+    startOn(app, day);
+    assert.ok(substitutePermanently(app, p.cat, p.key, 'Machine Chest Press'), 'the form accepted it');
+    logAndFinish(app);
+
+    app.selectBuiltIn(builtInId);
+
+    assert.equal(app.currentProgramId(), builtInId, 'the Built-In Program is active');
+    assert.deepEqual(plain(app.loadOverrides()), {}, 'it has no Permanent Substitutions');
+    const onBuiltIn = loggedMovements(app, builtInDay).find(m => m.name === p.name);
+    assert.equal(entryIn(app.initSession(day.id), onBuiltIn.cat, onBuiltIn.key).name, p.name,
+      'its next Session prescribes ' + p.name);
+    assert.ok(!progHtml(app).includes('Machine Chest Press'), 'its Program view does not show the substitute');
+    assert.ok(!dayViewHtml(app, builtInDay).includes('Machine Chest Press'), 'nor does its Day');
+
+    const later = reopenApp(app);
+    later.useSavedProgram(imported.id);
+    assert.equal(later.currentProgramId(), imported.id, 'the Imported Program is picked again from Saved Programs');
+    assert.equal(entryIn(later.initSession(day.id), p.cat, p.key).name, 'Machine Chest Press',
+      'and its Permanent Substitution is still there');
+  });
+});
+
+describe('a first launch with nothing stored', () => {
+  test('the app starts on a Built-In Program and shows a Day', () => {
+    const app = bootApp();
+
+    assert.equal(app.currentProgramId(), app.BUILT_IN_PROGRAMS[0].id, 'the first Built-In Program is active');
+    const day = dayWithSections(app, ['primary']);
+    app.switchDay(day.id);
+    const shown = textOf(shownIn(app, 'content'));
+    assert.ok(shown.includes(day.label), 'the Day view shows ' + day.label);
+    assert.ok(shown.includes(firstLogged(app, day, 'primary').name), 'with its Movements');
+    assert.deepEqual(app.consoleErrors(), [], 'nothing was reported as an error');
+  });
+
+  test('a new device can substitute in its first Session, day-only and Permanent', () => {
+    const app = bootApp();
+    const day = dayWithSections(app, ['primary', 'accessory']);
+    const p = firstLogged(app, day, 'primary');
+    const a = firstLogged(app, day, 'accessory');
+    app.switchDay(day.id);
+    app.startSession(day.id);
+    assert.ok(app.session, 'the Session started');
+
+    assert.ok(substitutePermanently(app, p.cat, p.key, 'Trap Bar Deadlift'), 'the form accepted the Permanent Substitution');
+    assert.ok(substituteVia(app, a.cat, a.key, 'Cable Fly'), 'and the day-only one');
+    const during = textOf(shownIn(app, 'content'));
+    assert.ok(during.includes('Trap Bar Deadlift') && during.includes('Cable Fly'), 'the Session shows both substitutes');
+    const record = logAndFinish(app);
+
+    assert.ok(textOf(shownIn(app, 'summaryBody')).includes('Trap Bar Deadlift'), 'the Summary names the substitute');
+    assert.equal(record.accessories[a.key].substitutedFor, a.name, 'the stored Session records the swap');
+    assert.equal(renderHistory(app).split('Substituted').length - 1, 1, 'history marks the Session');
+    assert.equal(app.initSession(day.id).primaries[p.key].name, 'Trap Bar Deadlift',
+      'the Permanent Substitution was kept for the next Session');
+    assert.deepEqual(app.consoleErrors(), [], 'nothing was reported as an error');
+  });
+});
+
+describe('a history of several Sessions, some substituted and some not', () => {
+  // Five Sessions across two Days, in the order the lifter did them. Each
+  // substitute name is used once, so seeing it anywhere but its own Session
+  // can only be a leak.
+  function busyHistory() {
+    const app = loadAppWithProgram(PPL);
+    const dayA = dayWithSections(app, ['primary', 'accessory']);
+    const dayB = app.DAYS.find(d => d !== dayA && !d.isOff && d.sections &&
+      ['primary', 'accessory'].every(c => d.sections.some(s => app.classifySection(s) === c)));
+    const plan = [
+      [dayA, [['primary', 'Trap Bar Deadlift']]],
+      [dayA, []],
+      [dayB, [['primary', 'Belt Squat'], ['accessory', 'Cable Fly']]],
+      [dayB, []],
+      [dayA, [['accessory', 'Landmine Row']]],
+    ];
+    const programText = JSON.stringify(app.PROGRAM);
+    const sessions = plan.map(([day, swaps]) => {
+      nextMillisecond();
+      startOn(app, day);
+      const subs = swaps.map(([cat, to]) => {
+        assert.ok(!programText.includes(to), to + ' is not a name the Program uses');
+        const m = firstLogged(app, day, cat);
+        assert.ok(substituteVia(app, m.cat, m.key, to), 'the form accepted ' + to);
+        return { to, from: m.name };
+      });
+      return { day, subs, record: logAndFinish(app) };
+    });
+    assert.equal(new Set(sessions.map(s => s.record.id)).size, sessions.length, 'five separate Sessions');
+    return { app, sessions, allSubs: [].concat(...sessions.map(s => s.subs)) };
+  }
+
+  test('each Session opened from history shows its own Substitutions and no one else\'s', () => {
+    const { app, sessions, allSubs } = busyHistory();
+    sessions.forEach(({ record, subs }, i) => {
+      app.openSessionSummary(record.id);
+      const shown = textOf(shownIn(app, 'summaryBody'));
+      subs.forEach(s => {
+        assert.ok(shown.includes(s.to), 'Session ' + (i + 1) + ' shows its ' + s.to);
+        assert.ok(shown.includes(s.from), 'and the ' + s.from + ' it replaced');
+      });
+      allSubs.filter(s => !subs.includes(s)).forEach(s => {
+        assert.ok(!shown.includes(s.to), 'Session ' + (i + 1) + ' does not show ' + s.to + ', from another Session');
+      });
+    });
+  });
+
+  test('each Day card in history marks its own substituted Sessions, and only those', () => {
+    const { app, sessions } = busyHistory();
+    const html = renderHistory(app);
+    const cards = html.split('<div class="day-card ').slice(1);
+    const days = [...new Set(sessions.map(s => s.day))];
+    assert.equal(cards.length, days.length, 'one card per Day trained');
+
+    days.forEach(day => {
+      const card = cards.find(c => textOf(c).includes(day.label));
+      assert.ok(card, 'a card for ' + day.label);
+      const rows = card.split('openSessionSummary(\'').slice(1).map(part => ({
+        id: part.slice(0, part.indexOf('\'')),
+        marked: part.slice(0, part.indexOf('</button>')).includes('Substituted'),
+      }));
+      const mine = sessions.filter(s => s.day === day);
+      assert.deepEqual(rows.map(r => r.id).sort(), mine.map(s => s.record.id).sort(),
+        day.label + ': the card lists that Day\'s Sessions and no other');
+      mine.forEach(s => {
+        const row = rows.find(r => r.id === s.record.id);
+        assert.equal(row.marked, s.subs.length > 0,
+          day.label + ': a Session is marked exactly when it substituted something');
+      });
+    });
   });
 });
