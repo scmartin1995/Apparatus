@@ -30,18 +30,33 @@ const WRAPPER = /^\s*\(function\(\)\s*\{\s*'use strict';\s*try\s*\{/;
 const INIT_MARKER = /^\/\/ ── INIT /m;
 
 function extractScript(html) {
-  // Only one inline script is expected; more than one means the file's shape
-  // changed and the extraction below is no longer sound.
-  const count = html.split(SCRIPT_OPEN).length - 1;
-  if (count !== 1) {
-    throw new Error('app-harness: expected exactly 1 inline <script> in index.html, found ' + count);
+  // More than one inline script is normal: a small bootstrap in <head> applies
+  // a saved Light/Dark choice before the first paint, so the app is no longer
+  // the only <script> in the file. The app is therefore identified by its own
+  // shape — the one inline script whose body opens with the IIFE + 'use
+  // strict' + try wrapper — and exactly one script must answer to that.
+  // Picking the largest or the last script instead would quietly extract
+  // whatever else lands in the file next, which is the confusion this
+  // assertion exists to prevent.
+  const bodies = [];
+  for (let from = 0; ; ) {
+    const open = html.indexOf(SCRIPT_OPEN, from);
+    if (open === -1) break;
+    const bodyAt = open + SCRIPT_OPEN.length;
+    const close = html.indexOf(SCRIPT_CLOSE, bodyAt);
+    if (close === -1) {
+      throw new Error('app-harness: an inline <script> in index.html is never closed');
+    }
+    bodies.push(html.slice(bodyAt, close));
+    from = close + SCRIPT_CLOSE.length;
   }
-  const open = html.indexOf(SCRIPT_OPEN);
-  const close = html.lastIndexOf(SCRIPT_CLOSE);
-  if (open === -1 || close === -1 || close < open) {
-    throw new Error('app-harness: could not find the inline <script> in index.html');
+  const app = bodies.filter(body => WRAPPER.test(body));
+  if (app.length !== 1) {
+    throw new Error('app-harness: expected exactly 1 inline <script> in index.html whose ' +
+      'body opens with the app\'s IIFE + try wrapper, found ' + app.length +
+      ' (of ' + bodies.length + ' inline script(s))');
   }
-  return html.slice(open + SCRIPT_OPEN.length, close);
+  return app[0];
 }
 
 function unwrap(script) {
@@ -160,12 +175,18 @@ const EXPORTS = [
   'scorePrimary', 'scoreAr7', 'scoreAccessory', 'scoreFeel', 'computeScore',
   'gradeLabel', 'diagnosticLine',
   'getAllSessions', 'saveAllSessions', 'addSessionRecord', 'sessionsByDay', 'lastScoreForDay',
+  'SESSION_CAP',
   'saveDraft', 'loadDraft', 'clearDraft',
   'loadStoredProgram', 'saveProgram', 'clearProgram', 'clone', 'currentProgramId',
   'builtInById', 'selectedBuiltIn', 'initProgramState',
   'readBaselineMap', 'loadBaselines', 'saveBaselines',
   'calcOrm', 'repToPercent', 'getSuggestedWeight', 'weightHintHtml',
   'baselineFor', 'displaySets', 'workingRange',
+  'sessionItem', 'prInfo',
+  // window.-assigned, so it needs naming here; the bw flag is only reachable
+  // through it the way a lifter reaches it, which is what a test wanting the
+  // stored per-name preference written as a side effect has to drive.
+  'isBodyweight', 'toggleBodyweight',
   'parseCSV', 'buildProgramFromCSV', 'slugify',
   'renderSessionMode', 'renderSummary', 'renderEditLog', 'render',
   'snapshotAsMovement', 'backfillSnapshot', 'escHtml',
@@ -221,6 +242,21 @@ function loadApp(htmlPath) {
   const source = unwrap(extractScript(html)) + '\n' + EPILOGUE + '\n';
 
   const localStorage = makeLocalStorage();
+
+  // A clock that only ever goes forward, and does it in hour-long strides.
+  //
+  // The Summary's Score count-up reads performance.now() to start, then
+  // re-queues itself through requestAnimationFrame until the elapsed
+  // fraction reaches 1. No test wants the frames in between — they assert on
+  // the Summary's final rendered content — so the frame after the one that
+  // starts an animation should already be past its duration. An hour a
+  // reading guarantees that for any duration the app could plausibly use:
+  // the count-up paints its first frame, then its last, and stops. A clock
+  // that stood still would leave it re-queueing for ever, holding the
+  // process open past the end of the run.
+  let clockMs = 0;
+  const now = () => (clockMs += 3.6e6);
+
   const sandbox = {
     document: makeDocument(),
     localStorage,
@@ -228,7 +264,8 @@ function loadApp(htmlPath) {
     location: { href: 'http://localhost/', reload() {} },
     console,
     setTimeout, clearTimeout, setInterval, clearInterval,
-    requestAnimationFrame(fn) { return setTimeout(fn, 0); },
+    performance: { now },
+    requestAnimationFrame(fn) { return setTimeout(() => fn(now()), 0); },
     cancelAnimationFrame(id) { clearTimeout(id); },
     matchMedia() { return { matches: false, addEventListener() {}, addListener() {} }; },
     confirm(message) { prompts.asked.push(String(message)); return prompts.answer; },

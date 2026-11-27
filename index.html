@@ -416,7 +416,7 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .log-item-target strong { color: var(--c-primary-ctr); }
 .bw-toggle { position: relative; flex-shrink: 0; padding: 4px 10px; border-radius: 999px; background: var(--c-surface-ctr); border: 1px solid color-mix(in srgb, var(--c-outline-v) 40%, transparent); font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; letter-spacing: 0.1em; color: var(--c-on-surface-v); cursor: pointer; }
 .bw-toggle.on { background: color-mix(in srgb, var(--c-secondary) 12%, transparent); border-color: var(--c-secondary); color: var(--c-secondary); }
-.bw-toggle::after, .pr-btn::after { content: ''; position: absolute; inset: -10px -6px; }
+.bw-toggle::after, .pr-btn::after, .sub-swap::after { content: ''; position: absolute; inset: -10px -6px; }
 .log-set-row.pr-set .log-input { border-color: var(--c-pr); color: var(--c-pr); }
 .log-set-row.pr-set .log-set-num { color: var(--c-pr); }
 .log-set-row.pr-set::after { content: 'PR'; flex-shrink: 0; font-family: var(--font-h); font-weight: 800; font-size: 0.5625rem; letter-spacing: 0.08em; color: var(--c-on-pr); background: var(--c-pr); border-radius: var(--r-sm); padding: 2px 5px; }
@@ -446,17 +446,17 @@ body.session-active .main-content { padding-bottom: 10rem; }
 .weight-hint-source { font-family: var(--font-b); font-size: 0.5625rem; color: var(--c-on-surface-v); opacity: 0.5; }
 /* Substitutions read in secondary, so a swapped Movement never reads as a
    prescribed load, which is what the primary green means everywhere else. */
-.sub-swap { flex: 0 0 auto; width: 1.75rem; height: 1.75rem; margin: -2px -4px 0 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; color: var(--c-on-surface-v); transition: background 0.2s, color 0.2s; }
+.sub-swap { position: relative; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; margin: -2px -4px 0 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; color: var(--c-on-surface-v); transition: background 0.2s, color 0.2s; }
 .sub-swap:hover { background: var(--c-surface-top); color: var(--c-secondary); }
 .sub-swap.active { color: var(--c-secondary); }
 .sub-swap .mi { font-size: 1rem; }
 .sub-marker { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.sub-marker-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: rgba(0,227,253,0.08); border: 1px solid rgba(0,227,253,0.25); color: var(--c-secondary); padding: 3px 8px; border-radius: 4px; }
+.sub-marker-badge { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.15em; background: color-mix(in srgb, var(--c-secondary) 8%, transparent); border: 1px solid color-mix(in srgb, var(--c-secondary) 25%, transparent); color: var(--c-secondary); padding: 3px 8px; border-radius: 4px; }
 .sub-marker-label { font-family: var(--font-b); font-size: 0.625rem; color: var(--c-on-surface-v); }
 .sub-marker-label strong { color: var(--c-on-surface); font-weight: 600; }
-.prog-sub-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 0 0 8px 0; padding: 8px 10px; border-radius: 8px; background: rgba(0,227,253,0.05); border: 1px solid rgba(0,227,253,0.18); }
+.prog-sub-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 0 0 8px 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--c-secondary) 5%, transparent); border: 1px solid color-mix(in srgb, var(--c-secondary) 18%, transparent); }
 .prog-sub-row .sub-marker { margin-bottom: 0; flex: 1 1 60%; min-width: 0; }
-.prog-sub-revert { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.12em; background: none; border: 1px solid rgba(255,255,255,0.24); color: var(--c-on-surface); padding: 8px 12px; min-height: 36px; border-radius: 6px; cursor: pointer; flex: 0 0 auto; }
+.prog-sub-revert { font-family: var(--font-h); font-weight: 700; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.12em; background: none; border: 1px solid color-mix(in srgb, var(--c-outline-v) 20%, transparent); color: var(--c-on-surface); padding: 8px 12px; min-height: 36px; border-radius: 6px; cursor: pointer; flex: 0 0 auto; }
 .summary-subs { display: flex; flex-direction: column; gap: 8px; padding: 16px 0 18px; border-bottom: 1px solid rgba(72,72,71,0.15); }
 .summary-subs-title { font-family: var(--font-h); font-weight: 700; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--c-on-surface-v); }
 .summary-sub-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
@@ -2682,18 +2682,28 @@ function historyBestOrm(name, all) {
   return best;
 }
 function sessionItem(key) {
-  const day = session && DAYS.find(d => d.id === session.dayType), at = String(key).split('-');
-  const sec = day && day.sections[at[0]];
-  return (sec && sec.items[at[1]]) || null;
+  // A PR belongs to the Movement actually being logged, so this reads the
+  // Session snapshot: the Day still prescribes the replaced Movement, whose
+  // Baseline and name history are the wrong ones to measure a substitute
+  // against. Deliberately the same lookup prInfo uses for its own entry, so
+  // the entry and the item it is scored against cannot drift apart again.
+  const entry = session && (session.primaries[key] || session.accessories[key]);
+  return entry ? snapshotAsMovement(entry) : null;
 }
 function prInfo(key, item) {
   const entry = session && (session.primaries[key] || session.accessories[key]);
   if (!entry || entry.bw || !item) return null;
   const b = liftBaseline(item);
-  // Fixed for the session, so a set stays marked after the 1RM is updated.
-  if (typeof entry.prBase !== 'number') entry.prBase = (b && b.orm > 0) ? b.orm : historyBestOrm(item.name);
   const orms = entry.sets.map(setOrm), best = Math.max.apply(null, orms.concat(0));
-  const flags = orms.map(o => entry.prBase > 0 && o > entry.prBase);
+  // Fixed for the session, so a set stays marked after the 1RM is updated. It
+  // waits for a logged set because that is the first moment a PR can be shown,
+  // and stamping on bare render wrote the field into every Movement the lifter
+  // never touched — cleanGroup whitelists it, so the junk was then persisted.
+  if (typeof entry.prBase !== 'number' && best > 0) entry.prBase = (b && b.orm > 0) ? b.orm : historyBestOrm(item.name);
+  // Graded through a local copy, so an entry with nothing logged is measured
+  // against the right number without being written to.
+  const base = typeof entry.prBase === 'number' ? entry.prBase : ((b && b.orm > 0) ? b.orm : historyBestOrm(item.name));
+  const flags = orms.map(o => base > 0 && o > base);
   return { entry: entry, baseline: b, best: best, flags: flags, isPr: flags.some(Boolean), canUpdate: !!b && best > b.orm };
 }
 function prBoxHtml(key, info) {
@@ -2912,6 +2922,16 @@ function cleanGroup(g, kind) {
     const c = { name: String(it.name == null ? '' : it.name), note: String(it.note == null ? '' : it.note), setsStr: String(it.setsStr == null ? '' : it.setsStr),
       target: (function() { const pos = v => Math.min(Math.max(parseInt(v) || 1, 1), 1000), lo = pos(t.repLow); return { numSets: Math.min(pos(t.numSets), 20), repLow: lo, repHigh: Math.max(pos(t.repHigh || t.repLow), lo) }; })() };
     if (typeof it.prBase === 'number' && isFinite(it.prBase)) c.prBase = it.prBase;
+    // This whitelist rebuilds the entry from scratch and predates
+    // Substitutions, so a field the snapshot carries is dropped on every read
+    // unless it is named here — and every read cleans, getAllSessions and
+    // loadDraft alike. Anything added to a Session entry belongs here too.
+    // Copied only when the entry has them: null is what initSession writes,
+    // but a record or draft from before the feature has neither key at all,
+    // and inventing null there would tell backfillSnapshot the gap is filled
+    // and leave the Lift with no Baseline binding.
+    if ('substitutedFor' in it) c.substitutedFor = it.substitutedFor == null ? null : String(it.substitutedFor);
+    if ('baselineId' in it) c.baselineId = it.baselineId == null ? null : safeId(it.baselineId, '');
     if (kind === 'ar7') { c.weight = numStr(it.weight); c.rounds = Math.min(Math.max(parseInt(it.rounds) || 0, 0), 7); }
     else { c.bw = !!it.bw; c.sets = cleanSets(it.sets); if (kind === 'acc') c.rpe = Math.min(Math.max(parseInt(it.rpe) || 0, 0), 5); }
     out[k] = c;
@@ -3036,7 +3056,7 @@ function entryFor(cat, key) {
 }
 // Replaces what the lifter logs against. The baseline binding goes with it:
 // keeping it would prescribe a barbell load for a dumbbell movement.
-function substituteEntry(entry, rawName) {
+function substituteEntry(entry, rawName, cat) {
   const name = String(rawName || '').trim().slice(0, SUB_NAME_MAX);
   if (!name) return false;
   // Records what was replaced in the Day the lifter was looking at, so
@@ -3044,6 +3064,22 @@ function substituteEntry(entry, rawName) {
   if (!entry.substitutedFor) entry.substitutedFor = entry.name;
   entry.name = name;
   entry.baselineId = null;
+  // prBase was stamped from the Movement being replaced — its Lift's 1RM, or
+  // the best in history under its name — so leaving it would mark and miss PRs
+  // for the substitute against the wrong number. Dropped, it is re-derived
+  // from the substitute's own name on the next render.
+  delete entry.prBase;
+  // bw is the one value derived from the Movement that is computed once and
+  // cached here rather than re-resolved at render time from a field the lines
+  // above reset — liftBaseline reads baselineId, getSuggestedWeight reads name.
+  // Left standing it hands the substitute the replaced Movement's answer for the
+  // rest of the Session: a barbell row logged as bodyweight, no weight hint, and
+  // prInfo refusing the entry outright, so no PR tracking at all. Re-derived from
+  // the substitute's own name, which is also where the lifter's stored preference
+  // for it lives — the same "improves on its own" property suggested loads have.
+  // A typed name carries no Program bodyweight flag, as it should: the Program
+  // never prescribed this Movement.
+  if (cat !== 'ar7') entry.bw = isBodyweight({ name: name });
   return true;
 }
 
@@ -3170,13 +3206,24 @@ function loggedValuesIn(entry) {
 // them over would attribute them to the prescribed Movement and feed them to
 // the history-based suggested-weight lookup, which matches on Movement name.
 // What is left is the entry initSession would have built.
-function revertEntry(entry, item) {
+function revertEntry(entry, item, cat) {
   entry.name = item.name;
   entry.note = item.note || '';
   entry.setsStr = item.sets || '';
   entry.target = parseSetsStr(item.sets);
   entry.baselineId = item.baselineId || null;
   entry.substitutedFor = null;
+  // prBase was stamped from the substitute — its Lift's 1RM, or the best in
+  // history under its name — so leaving it would mark and miss PRs for the
+  // restored Movement against the wrong number. Dropped, it is re-derived
+  // from the prescribed Movement's own Baseline on the next render.
+  delete entry.prBase;
+  // bw came off the substitute, and the lifter may have corrected the toggle on
+  // top of that, so neither value belongs to the Movement coming back. Stamped
+  // the way initSession stamps it — from the prescribed Movement itself, Program
+  // flag and all — because that is what makes a reverted Movement genuinely
+  // indistinguishable from one never substituted rather than merely renamed.
+  if (cat !== 'ar7') entry.bw = isBodyweight(item);
   if (entry.sets) {
     entry.sets = [];
     for (let i = 0; i < entry.target.numSets; i++) entry.sets.push({ weight: '', reps: '' });
@@ -3298,7 +3345,7 @@ function renderSessionMode(day) {
         const p = entry;
         const hintHtml = p.bw ? '' : weightHintHtml(p.name, p.setsStr, p.baselineId, history);
         let setsHtml = '';
-        const pr = prInfo(key, item);
+        const pr = prInfo(key, snapshotAsMovement(entry));
         p.sets.forEach((set, idx) => {
           setsHtml += '<div class="log-set-row' + (pr && pr.flags[idx] ? ' pr-set' : '') + '" data-pr-key="' + key + '"><span class="log-set-num">S' + (idx+1) + '</span>' +
             '<input class="log-input ' + (set.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="' + (p.bw?'BW +':'lb') + '" value="' + (set.weight||'') + '" oninput="updatePrimarySet(\'' + key + '\',' + idx + ',\'weight\',this.value)"/>' +
@@ -3319,7 +3366,7 @@ function renderSessionMode(day) {
         const accHint = acc.bw ? null : getSuggestedWeight(acc.name, acc.setsStr, acc.baselineId, history);
         const accHintHtml = accHint ? '<div class="weight-hint"><span class="weight-hint-badge">~' + accHint.weight + ' lb</span><span class="weight-hint-label">suggested</span><span class="weight-hint-source">' + (accHint.source==='baseline'?'from 1RM':'last session') + '</span></div>' : '';
         let setsHtml = '';
-        const pr = prInfo(key, item);
+        const pr = prInfo(key, snapshotAsMovement(entry));
         acc.sets.forEach((set, idx) => {
           setsHtml += '<div class="log-set-row' + (pr && pr.flags[idx] ? ' pr-set' : '') + '" data-pr-key="' + key + '"><span class="log-set-num">S' + (idx+1) + '</span>' +
             '<input class="log-input ' + (set.weight?'filled':'') + '" type="number" inputmode="decimal" placeholder="' + (acc.bw?'BW +':'lb') + '" value="' + (set.weight||'') + '" oninput="updateAccessorySet(\'' + key + '\',' + idx + ',\'weight\',this.value)"/>' +
@@ -4017,7 +4064,7 @@ function saveSubstitution() {
     return;
   }
 
-  substituteEntry(entry, name);
+  substituteEntry(entry, name, cat);
   applyScheme(entry, cat, scheme.numSets, scheme.repLow, scheme.repHigh);
   // Marked permanent: recorded against the Movement the Program prescribes on
   // this Day, so every future Session of that Day starts with it in place. A
@@ -4053,7 +4100,7 @@ function revertSubstitution() {
     setSubHint('Left as it was. Nothing was changed.');
     return;
   }
-  revertEntry(entry, item);
+  revertEntry(entry, item, cat);
   closeSubstituteModal();
   saveDraft(); render();
 }

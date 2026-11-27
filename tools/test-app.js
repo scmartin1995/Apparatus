@@ -211,7 +211,15 @@ describe('primary scoring', () => {
     assert.equal(light, heavy);
   });
 
-  test('empty sets are ignored rather than counted as failures', () => {
+  // Corrected deliberately, not bent to fit: `main` reversed this scorer.
+  // be5dc52 divided a Movement's points by the sets actually logged and
+  // dropped a Movement with nothing logged out of the average, so an empty
+  // set cost nothing. scorePrimary now divides by `p.sets.length` under its
+  // own comment "Every programmed set counts: a set that wasn't logged
+  // scores zero, so skipping work costs points instead of dropping out of
+  // the average." That is the contract this test states now: one of three
+  // prescribed sets logged at the top of the range is a third of full marks.
+  test('an empty set is counted as a failure rather than ignored', () => {
     const app = loadApp();
     const target = { numSets: 3, repLow: 3, repHigh: 5 };
     const score = app.scorePrimary(onePrimary(app, target, [
@@ -219,7 +227,7 @@ describe('primary scoring', () => {
       { weight: '', reps: '' },
       { weight: '', reps: '' },
     ]));
-    assert.equal(score, 100);
+    assert.equal(score, 100 / 3);
   });
 
   test('a Day with no primaries scores null, not zero', () => {
@@ -290,9 +298,19 @@ describe('accessory scoring', () => {
     assert.ok(twoOfFour < twoOfTwo, 'the same logged work over more prescribed sets scores lower');
   });
 
-  test('an untouched accessory is left out rather than scored zero', () => {
+  // Corrected deliberately, not bent to fit: `main` reversed this scorer too.
+  // be5dc52 counted an accessory into the average only once it had an RPE or
+  // a filled set, so a Day of one untouched accessory scored null.
+  // scoreAccessory now adds every accessory to the total and returns
+  // `total / items.length`, under its own comment "An exercise with nothing
+  // logged scores zero rather than being ignored" — matched in computeScore
+  // by "Work that was programmed but not logged still counts as zero." So an
+  // untouched accessory is a scored zero, and the Day averages to zero
+  // rather than to nothing at all. null is still reserved for a Day that
+  // prescribes no accessories, which the next test holds.
+  test('an untouched accessory is scored zero rather than left out', () => {
     const app = loadApp();
-    assert.equal(app.scoreAccessory(s({ rpe: 0, sets: [{ weight: '', reps: '' }] })), null);
+    assert.equal(app.scoreAccessory(s({ rpe: 0, sets: [{ weight: '', reps: '' }] })), 0);
   });
 
   test('a Day with no accessories scores null', () => {
@@ -472,12 +490,34 @@ describe('session records', () => {
 
   test('records are capped, keeping the most recent', () => {
     const app = loadAppWithProgram(PPL);
-    for (let i = 0; i < 40; i++) {
-      app.addSessionRecord({ id: 's' + i, dayType: 'pull', date: '2026-01-01T00:00:00Z', score: { total: i } });
-    }
-    const all = app.getAllSessions();
-    assert.ok(all.length <= 32, 'got ' + all.length);
-    assert.equal(all[all.length - 1].id, 's39', 'the newest record survived');
+    // The cap comes from the app, never from a literal here: `main` moved it
+    // from 32 to 400 and a number written down in the test would only rot
+    // again the next time it moves.
+    const cap = app.SESSION_CAP;
+    assert.ok(Number.isInteger(cap) && cap > 0, 'the app exports its Session cap: ' + cap);
+
+    const rec = i => ({ id: 's' + i, dayType: 'pull', date: '2026-01-01T00:00:00Z', score: { total: i % 101 } });
+    // A few more than the cap allows, so the cap has to bite. Seeded in one
+    // write rather than one record at a time: addSessionRecord re-reads and
+    // re-cleans the whole store on every call, which at cap + n records is
+    // quadratic and would cost the suite about a second on its own.
+    const extra = 8, n = cap + extra;
+    const seeded = [];
+    for (let i = 0; i < n; i++) seeded.push(rec(i));
+    app.saveAllSessions(seeded);
+
+    let all = app.getAllSessions();
+    assert.equal(all.length, cap, 'got ' + all.length);
+    assert.equal(all[all.length - 1].id, 's' + (n - 1), 'the newest record survived');
+    assert.equal(all[0].id, 's' + extra, 'and it is the oldest records that were dropped');
+
+    // And the same holds when a Session is finished onto an already-full
+    // store, which is how the cap is actually reached.
+    app.addSessionRecord(rec(n));
+    all = app.getAllSessions();
+    assert.equal(all.length, cap, 'still capped after one more Session: ' + all.length);
+    assert.equal(all[all.length - 1].id, 's' + n, 'the Session just finished survived');
+    assert.equal(all[0].id, 's' + (extra + 1), 'and the oldest one left made room for it');
   });
 
   test('a Day with no Sessions has no last Score', () => {
@@ -561,10 +601,16 @@ describe('suggested loads', () => {
 
   test('a Movement with no Baseline falls back to the last weight logged for that name', () => {
     const app = loadAppWithProgram(PPL);
+    // Keyed `<section>-<item>`, the way a real snapshot keys it. `main` added
+    // cleanSession/cleanGroup and getAllSessions now cleans every record on
+    // read; cleanGroup drops any entry whose key fails /^\d+-\d+$/, so the
+    // 'k' this fixture used to use read back as an empty group and the
+    // history fallback had nothing to match. The behaviour under test is
+    // unchanged — only the storage contract the fixture has to satisfy.
     app.addSessionRecord({
       id: 's1', dayType: 'pull', date: '2026-01-01T00:00:00Z', score: { total: 70 },
       primaries: {}, ar7: {},
-      accessories: { k: { name: 'Pec Deck', sets: [{ weight: '140', reps: '12' }], rpe: 4 } },
+      accessories: { '0-0': { name: 'Pec Deck', sets: [{ weight: '140', reps: '12' }], rpe: 4 } },
     });
 
     const hint = app.getSuggestedWeight('Pec Deck', '3 × 12', null);
@@ -575,10 +621,12 @@ describe('suggested loads', () => {
 
   test('history matching ignores case and spacing in the name', () => {
     const app = loadAppWithProgram(PPL);
+    // '0-0' rather than 'k' for the reason given on the test above: cleanGroup
+    // discards an entry that is not keyed the way a snapshot keys it.
     app.addSessionRecord({
       id: 's1', dayType: 'pull', date: '2026-01-01T00:00:00Z', score: { total: 70 },
       primaries: {}, ar7: {},
-      accessories: { k: { name: 'Pec Deck', sets: [{ weight: '140', reps: '12' }], rpe: 4 } },
+      accessories: { '0-0': { name: 'Pec Deck', sets: [{ weight: '140', reps: '12' }], rpe: 4 } },
     });
     const hint = app.getSuggestedWeight('pec  deck', '3 × 12', null);
     assert.ok(hint && hint.weight === 140, 'the same Movement under a different spelling still matches');
@@ -1159,11 +1207,13 @@ describe('a Substitution and the Baseline it leaves behind', () => {
   });
 
   test('a substitute picks up the load it was logged at last time', () => {
-    // Nothing extra builds this: the history fallback matches on name.
+    // Nothing extra builds this: the history fallback matches on name. The
+    // entry is keyed '0-0' because getAllSessions cleans on read and
+    // cleanGroup discards an entry that is not keyed `<section>-<item>`.
     const app = loadAppWithProgram(PPL);
     app.addSessionRecord({
       id: 'prev', dayType: 'pull', date: '2026-01-01T00:00:00Z', score: { total: 70 },
-      primaries: { k: { name: 'Hack Squat', sets: [{ weight: '180', reps: '8' }] } },
+      primaries: { '0-0': { name: 'Hack Squat', sets: [{ weight: '180', reps: '8' }] } },
       ar7: {}, accessories: {},
     });
 
@@ -1744,7 +1794,13 @@ describe('what a substitute is graded against', () => {
     substituteWithScheme(app, 'primary', key, 'Leg Press Machine', { sets: 3, repLow: 15, repHigh: 20 });
     fillSets(app.entryFor('primary', key), 200, 18);
 
-    const scored = app.scorePrimary(s);
+    // `main`'s scorePrimary keeps every programmed Movement in the Day average,
+    // so the primaries the lifter never logged now score zero into it instead of
+    // dropping out. The subject here is what one substitute is graded against,
+    // not how a Day aggregates, so the entry is scored on its own -- the same
+    // device the prescribed-range side of the comparison below already uses.
+    const e = app.entryFor('primary', key);
+    const scored = scoredAgainst(app, e.target, e.sets);
     assert.ok(scored > 85 && scored < 100, '18 reps sits inside the range they set: ' + scored);
     assert.equal(scored, 94);
     assert.notEqual(scored, scoredAgainst(app, prescribed, [{ weight: '200', reps: '18' }]),
@@ -1759,6 +1815,13 @@ describe('what a substitute is graded against', () => {
 
     // A loadable machine, logged at the three reps the lifter set for it.
     substituteWithScheme(t.app, 'primary', t.key, 'Belt Squat', { sets: 3, repLow: 3, repHigh: 3 });
+    // `main`'s scorePrimary counts every programmed set, so a neighbouring
+    // primary left unlogged now scores zero into the Day average instead of
+    // dropping out of it. This test is about what the substitute is graded
+    // against, not about partial logging, so the whole Day is logged at the
+    // top of each range: every other Movement scores 100 and the Day Score
+    // is the substitute's own.
+    Object.values(s.primaries).forEach(p => fillSets(p, 300, p.target.repHigh));
     fillSets(t.app.entryFor('primary', t.key), 300, 3);
 
     assert.equal(t.app.scorePrimary(s), 100, 'three of three is the top of the range they set');
@@ -1771,18 +1834,25 @@ describe('what a substitute is graded against', () => {
     const app = loadAppWithProgram(PPL);
     const day = dayWithSections(app, ['accessory']);
     const key = findSection(app, 'accessory', day.id).key(0);
-    const s = startOn(app, day);
+    startOn(app, day);
 
-    // Only this Movement is logged, so the Session's accessory Score is its own.
+    // `main`'s scoreAccessory keeps every programmed Movement in the Day
+    // average, so the accessories the lifter never logged now score zero into
+    // it. What is being claimed is that one Movement's own set count divides
+    // its own Score, so that Movement is scored on its own rather than through
+    // a Day average that has other Movements in it.
+    const scoreOne = () => app.scoreAccessory(
+      { primaries: {}, ar7: {}, accessories: { [key]: app.entryFor('accessory', key) } });
+
     substituteWithScheme(app, 'accessory', key, 'Pec Deck', { sets: 3, repLow: 12, repHigh: 15 });
     fillSets(app.entryFor('accessory', key), 60, 12);
-    assert.equal(app.scoreAccessory(s), 75, 'three of three sets filled, with no RPE reported');
+    assert.equal(scoreOne(), 75, 'three of three sets filled, with no RPE reported');
 
     app.answerConfirm(false);
     assert.ok(substituteWithScheme(app, 'accessory', key, 'Pec Deck', { sets: 6, repLow: 12, repHigh: 15 }),
       'raising the count discards nothing, so nothing is confirmed');
     assert.equal(app.entryFor('accessory', key).sets.length, 6);
-    assert.equal(app.scoreAccessory(s), 37.5, 'the same work over six sets is half the Score');
+    assert.equal(scoreOne(), 37.5, 'the same work over six sets is half the Score');
   });
 
   test('lowering the set count raises the accessory Score for the work that fits', () => {
@@ -1790,14 +1860,89 @@ describe('what a substitute is graded against', () => {
     const day = dayWithSections(app, ['accessory']);
     const key = findSection(app, 'accessory', day.id).key(0);
     const s = startOn(app, day);
+
+    // Scored on its own for the same reason as above: the Day average now
+    // carries the accessories the lifter never logged, which would bury the one
+    // thing this test is about.
+    const scoreOne = () => app.scoreAccessory(
+      { primaries: {}, ar7: {}, accessories: { [key]: app.entryFor('accessory', key) } });
+
     assert.equal(s.accessories[key].sets.length, 3, 'the Movement is prescribed three sets');
     s.accessories[key].sets[0] = { weight: '60', reps: '12' };
-    assert.equal(app.scoreAccessory(s), 25, 'one of three sets filled');
+    assert.equal(scoreOne(), 25, 'one of three sets filled');
 
     app.answerConfirm(false);
     assert.ok(substituteWithScheme(app, 'accessory', key, 'Pec Deck', { sets: 1, repLow: 12, repHigh: 15 }),
       'the two empty sets go without a word');
-    assert.equal(app.scoreAccessory(s), 75, 'one of one set filled');
+    assert.equal(scoreOne(), 75, 'one of one set filled');
+  });
+});
+
+// ── THE PR SEAM: MEASURED AGAINST THE SNAPSHOT, NOT THE DAY ─
+
+// Both halves of the seam are called straight off the harness: a render never
+// calls `sessionItem`, so asserting on the rendered PR box would leave half of
+// this seam uncovered.
+
+describe('what a substitute PR is measured against', () => {
+  // A PR belongs to the Movement the lifter actually loaded, so this seam has to
+  // resolve from the Session snapshot -- the same flip ticket 02 made for the
+  // rest of session mode. Read the Day instead and a substitute is measured
+  // against the replaced Movement's Baseline and name history: not a missing
+  // feature, a wrong number put in front of a lifter.
+  //
+  // The fixture straddles the two 1RMs on purpose. The Program prescribes
+  // Conventional Deadlift off a 365 lb Baseline; the lifter's back says no, so
+  // Romanian Deadlift goes in instead -- a Lift the Program also tracks, at 254
+  // -- and the logged work estimates out at 302.5. That is a real PR against
+  // the substitute and nowhere near one against what it replaced, so every
+  // field the seam returns differs by which Movement it read. A substitute with
+  // no Baseline and no history would prove nothing: it bases at 0, and the app
+  // shows no PR box at all either way.
+  function swappedForALighterLift() {
+    const app = loadAppWithProgram(PPL);
+    const day = app.DAYS.find(d => d.id === 'pull');
+    const key = findSection(app, 'primary', day.id).key(0);
+    const s = startOn(app, day);
+    const baselines = app.loadBaselines();
+    const prescribed = baselines.find(b => b.id === s.primaries[key].baselineId);
+    const substitute = baselines.find(b => b.lift === 'Romanian Deadlift');
+    assert.ok(prescribed && substitute, 'the fixture needs two Lifts the Program tracks');
+    assert.equal(prescribed.orm, 365, 'the prescribed 1RM this fixture straddles moved');
+    assert.equal(substitute.orm, 254, 'the substitute 1RM this fixture straddles moved');
+    assert.equal(app.calcOrm(275, 3), 302.5, 'the logged estimate no longer lands between them');
+
+    // Substituting clears the base, and the stamp waits for a logged set, so
+    // the work goes in and then session mode is rendered -- the order a lifter
+    // does it in, and the order that settles the base on the substitute.
+    assert.ok(substituteVia(app, 'primary', key, substitute.lift), 'the Substitution was refused');
+    fillSets(app.entryFor('primary', key), 275, 3);
+    renderActive(app, day);
+    return { app, day, key, prescribed, substitute };
+  }
+
+  test('a substitute is measured against its own Baseline, not the replaced Movement’s', () => {
+    const t = swappedForALighterLift();
+    const info = t.app.prInfo(t.key, t.app.sessionItem(t.key));
+
+    assert.ok(info, 'the seam resolved nothing for a logged primary');
+    assert.equal(plain(info.baseline).id, t.substitute.id,
+      'the Baseline read belongs to the Lift that was actually loaded');
+    assert.equal(info.entry.prBase, t.substitute.orm,
+      'and the number measured against is that Lift’s 1RM');
+    assert.equal(info.best, 302.5, '275 for 3 estimates out at 302.5');
+    assert.equal(info.isPr, true, '302.5 beats the 254 the substitute started the Session at');
+    assert.equal(info.canUpdate, true, 'so the lifter is offered the update');
+    assert.deepEqual(plain(info.flags), [true, true, true], 'and every logged set is marked');
+
+    // The counterpart, so none of the above can be satisfied by a seam that
+    // measures against nothing in particular: handed the Movement the Day still
+    // prescribes, the very same logged work is not worth an update. That is
+    // what the lifter was shown while this seam read the Day.
+    const asPrescribed = t.app.prInfo(t.key,
+      { name: t.prescribed.lift, sets: '3 x 3', baselineId: t.prescribed.id });
+    assert.equal(plain(asPrescribed.baseline).id, t.prescribed.id);
+    assert.equal(asPrescribed.canUpdate, false, '302.5 does not beat the prescribed 365');
   });
 });
 
@@ -4157,6 +4302,12 @@ describe('the End-of-Session promotion prompt', () => {
 // so this pins the no-Substitution case against the build that shipped before
 // any of the work began.
 //
+// The reference is no longer literally that first build. main moved 52 commits
+// on while this feature was built, so the pin is main's own tip instead — the
+// build this feature merged into. The question is unchanged and the comparison
+// is sharper for it: reference and HEAD now differ by the feature and nothing
+// else.
+//
 // The reference build is extracted from git when the suite runs rather than
 // checked in as a second copy of the app. If it cannot be extracted — no git
 // on the path, or a clone without that commit — these tests skip: a reference
@@ -4169,9 +4320,26 @@ describe('the End-of-Session promotion prompt', () => {
 // would notice: the Score an identical Session produces, and the Movement
 // names, schemes and targets the snapshot carries.
 
-// The commit before the feature work began: "Add biking to off days, move
-// off-day content into the program".
-const PRE_FEATURE_COMMIT = 'be5dc52';
+// main's tip, which is also this merge's MERGE_HEAD: "Merge pull request #14
+// from scmartin1995/bundle-fonts". The pin moved off be5dc52 ("Add biking to
+// off days, move off-day content into the program") for two independent
+// reasons, neither of them convenience:
+//
+//   1. main edited both bundled Programs. The change is only the per-Day
+//      `accent` colour — no scheme, set, rep or Section change, nothing any
+//      scorer reads. But the first assertion below is that the bundled
+//      Programs are byte-identical across the two builds, and against
+//      be5dc52 that now fails by design: it is reporting that the comparison
+//      is no longer like for like.
+//   2. More seriously, main changed `computeScore` itself in 27d98bf, so a
+//      component the Day does not have hands its weight to the other one
+//      rather than capping the Session below 100. be5dc52 predates that, so
+//      it and the merged build produce legitimately different Scores for any
+//      Day carrying only one of the two components. That difference is
+//      main's intended improvement and has nothing to do with Substitutions
+//      — precisely the failure "for reasons that prove nothing" this section
+//      was built to avoid.
+const PRE_FEATURE_COMMIT = 'b6c573b';
 
 // Extracts the pre-feature index.html to a temp file once per run and hands
 // back its path, or null if git cannot produce something that loads.
@@ -4452,5 +4620,179 @@ describe('reverting a Substitution marked permanent during the Session', () => {
       'reading the raw Day here would reach past the settled decision to the Program');
     assert.equal(back.setsStr, stored.sets, 'with the scheme the decision was stored with');
     assert.equal(back.substitutedFor, null);
+  });
+});
+
+// bw says whether a Movement is logged by reps alone, and it is derived from
+// the Movement -- once, in initSession, off the one the Program prescribed, and
+// then cached on the Session entry. That cache is why this one leaked where its
+// neighbours did not: every other derived value re-resolves at render time from
+// a field a Substitution resets, liftBaseline off baselineId and historyBestOrm
+// and getSuggestedWeight off name, so they correct themselves for free. A flag
+// computed once does not. It followed a substitute around for the rest of the
+// Session, and a revert handed the prescribed Movement back whatever the lifter
+// had corrected it to.
+//
+// Its own section rather than an extension of the shared scoring-parity block,
+// per the working notes: the parity case belongs with the behaviour it comes
+// out of, and it is the second test here.
+describe('what decides a substitute is a bodyweight Movement', () => {
+  // The placeholder in a weight box is the flag as the lifter actually meets
+  // it: either the app wants a load, or it wants added load on top of them.
+  function weightPlaceholder(html, cat, key) {
+    const handler = (cat === 'primary' ? 'updatePrimarySet' : 'updateAccessorySet') +
+      "('" + key + "',0,'weight'";
+    const at = html.indexOf(handler);
+    assert.notEqual(at, -1, 'no weight box rendered for ' + cat + ' ' + key);
+    const m = /placeholder="([^"]*)"/.exec(html.slice(html.lastIndexOf('<input', at), at));
+    return m && m[1];
+  }
+  // The BW pill's pressed state, or null when no pill was rendered at all --
+  // which is the right answer for AR-7 and has to stay distinguishable from
+  // one rendered unlit.
+  function bwPill(html, key) {
+    const at = html.indexOf("toggleBodyweight('" + key + "')");
+    if (at === -1) return null;
+    const m = /aria-pressed="(true|false)"/.exec(html.slice(html.lastIndexOf('<button', at), at));
+    return m && m[1];
+  }
+  // The Movement on this Day the app reads as bodyweight, and one it reads as
+  // loaded. Found by name rather than by index so a Program edit says so.
+  function pullDay(app) {
+    const day = app.DAYS.find(d => d.id === 'pull');
+    const logged = loggedMovements(app, day);
+    const bw = logged.find(m => /Pull-Up/.test(m.name));
+    const loaded = logged.find(m => /Conventional Deadlift/.test(m.name));
+    assert.ok(bw && loaded, 'the fixture needs one bodyweight and one loaded prescribed Movement');
+    return { day, bw, loaded };
+  }
+
+  test('a substitute does not inherit the bodyweight rule of the Movement it replaced', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, bw } = pullDay(app);
+    // Romanian Deadlift is a Lift the Program tracks at 254, so the logged work
+    // estimates out at a PR the lifter would be shown. That matters because
+    // prInfo returns null for a bodyweight entry before it looks at anything
+    // else: with the flag inherited, a substituted barbell lift got no PR box
+    // and no offer to update its 1RM. Not a wrong number -- no number.
+    const substitute = app.loadBaselines().find(b => b.lift === 'Romanian Deadlift');
+    assert.equal(substitute.orm, 254, 'the 1RM this fixture is measured against moved');
+
+    const s = startOn(app, day);
+    assert.equal(s.primaries[bw.key].bw, true, 'the Program prescribes the bodyweight one here');
+    assert.ok(substituteVia(app, 'primary', bw.key, substitute.lift), 'the Substitution was refused');
+
+    const entry = app.entryFor('primary', bw.key);
+    assert.equal(entry.bw, false, 'a barbell lift is not bodyweight because what it replaced was');
+
+    fillSets(entry, 275, 3);
+    const html = renderActive(app, day);
+    assert.equal(weightPlaceholder(html, 'primary', bw.key), 'lb',
+      'the weight box asks for a load, not for added load');
+    assert.equal(bwPill(html, bw.key), 'false', 'and the BW pill is not lit');
+
+    const info = app.prInfo(bw.key, app.sessionItem(bw.key));
+    assert.ok(info, 'a substituted barbell lift gets PR tracking at all');
+    assert.equal(plain(info.baseline).id, substitute.id, 'measured against the Lift that was loaded');
+    assert.equal(info.best, 302.5, '275 for 3 estimates out at 302.5');
+    assert.equal(info.isPr, true, 'which beats the 254 the substitute started the Session at');
+    assert.equal(info.canUpdate, true, 'so the lifter is offered the update');
+  });
+
+  // The scoring-parity case for this section, and the direction that shows the
+  // flag is re-derived rather than merely cleared: a loaded Movement swapped
+  // for something the app reads as bodyweight has to start counting reps on
+  // their own, because setLogged reads this flag and nothing else decides
+  // whether a set with no weight in it happened.
+  test('a bodyweight substitute for a loaded Movement is logged as one', () => {
+    // Two Sessions differing only in the name typed in. Neither name is in the
+    // Program and neither carries a scheme change, so nothing but the name
+    // itself is left to decide.
+    const run = (name) => {
+      const app = loadAppWithProgram(PPL);
+      const { day, loaded } = pullDay(app);
+      const s = startOn(app, day);
+      assert.equal(s.primaries[loaded.key].bw, false, 'the Program prescribes a loaded Movement here');
+      assert.ok(substituteVia(app, 'primary', loaded.key, name), 'the Substitution was refused');
+      const entry = app.entryFor('primary', loaded.key);
+      // Reps and an empty weight box, which is how bodyweight work gets logged
+      // and the only logging whose meaning the flag changes.
+      entry.sets.forEach(set => { set.reps = String(entry.target.repHigh); });
+      return { app, day, key: loaded.key, entry, score: app.scorePrimary(s) };
+    };
+
+    const dips = run('Ring Dip');
+    assert.equal(dips.entry.bw, true, 'the substitute’s own name is what says bodyweight');
+    const html = renderActive(dips.app, dips.day);
+    assert.equal(weightPlaceholder(html, 'primary', dips.key), 'BW +',
+      'so the weight box asks for added load');
+    assert.equal(bwPill(html, dips.key), 'true', 'and the BW pill is lit');
+    assert.ok(dips.score > 0, 'and reps on their own score as work done');
+
+    const trapBar = run('Trap Bar Deadlift');
+    assert.equal(trapBar.entry.bw, false, 'a loaded substitute stays loaded');
+    assert.equal(trapBar.score, 0,
+      'where the same reps with nothing in the weight box score zero, which is the contrast');
+  });
+
+  test('a revert brings back the restored Movement’s own bodyweight rule, not the one the lifter set on the substitute', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, bw } = pullDay(app);
+    // What starting this Session builds before anything is substituted: the
+    // standard the reverted entry is held to.
+    const control = app.initSession(day.id).primaries[bw.key];
+    assert.equal(control.bw, true, 'the Program prescribes the bodyweight one here');
+
+    startOn(app, day);
+    // A bodyweight-sounding substitute on purpose, so the flag reads the same
+    // whichever Movement it came off. This case is about the revert, and the
+    // Substitution must not be what makes the two builds differ.
+    assert.ok(substituteVia(app, 'primary', bw.key, 'Ring Dip'), 'the Substitution was refused');
+    assert.equal(app.entryFor('primary', bw.key).bw, true, 'the fixture needs the flag set here');
+
+    // The lifter corrects it -- these are the assisted kind, so a load goes in
+    // the box after all. One press, landing on false either way.
+    app.toggleBodyweight(bw.key);
+    assert.equal(app.entryFor('primary', bw.key).bw, false, 'the correction took');
+
+    logSomething('primary', app.entryFor('primary', bw.key));
+    app.answerConfirm(true);
+    assert.ok(revertVia(app, 'primary', bw.key), 'the revert was refused');
+
+    const back = app.entryFor('primary', bw.key);
+    assert.equal(back.bw, true,
+      'the Movement coming back is bodyweight because it is, not because of what stood in for it');
+    // The narrow form of the property the shared revert block already asserts.
+    // That snapshot has nothing toggled in it, so a flag cached from the
+    // prescribed Movement cannot make it differ; this one has been toggled, and
+    // still has to come back identical.
+    assert.deepEqual(plain(back), plain(control),
+      'indistinguishable from a Movement that was never substituted, the flag included');
+    // And the correction stayed where it belongs: filed under the name the
+    // lifter set it on, so Ring Dips are remembered as loaded next time without
+    // the prescribed Movement having been taught anything.
+    assert.deepEqual(JSON.parse(app.localStorage.getItem('apparatus_bodyweight')), { 'ring-dip': false },
+      'the preference is keyed on the Movement it was set on');
+  });
+
+  test('an AR-7 substitute carries no bodyweight flag at all', () => {
+    const app = loadAppWithProgram(AR7);
+    const day = dayWithSections(app, ['ar7']);
+    const found = findSection(app, 'ar7', day.id);
+    const key = found.key(0);
+    const s = startOn(app, day);
+    assert.equal('bw' in s.ar7[key], false, 'initSession stamps no flag on an AR-7 entry');
+
+    // A bodyweight-sounding name, so nothing but the guard is keeping the flag
+    // off. AR-7 scores rounds out of seven and has no weight box to label, so
+    // inventing one here would be a new bug of exactly this family.
+    assert.ok(substituteVia(app, 'ar7', key, 'Ring Dip'), 'the Substitution was refused');
+    assert.equal('bw' in app.entryFor('ar7', key), false, 'and substituting does not invent one');
+    assert.equal(bwPill(renderActive(app, day), key), null, 'so no BW pill is rendered either');
+
+    logSomething('ar7', app.entryFor('ar7', key));
+    app.answerConfirm(true);
+    assert.ok(revertVia(app, 'ar7', key), 'the revert was refused');
+    assert.equal('bw' in app.entryFor('ar7', key), false, 'nor does reverting');
   });
 });
