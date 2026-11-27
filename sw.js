@@ -182,6 +182,20 @@ self.addEventListener('fetch', event => {
   // good responses are cached, and with a cached copy on hand a slow
   // connection (gym Wi-Fi, one bar) falls back to it after 4 seconds
   // instead of leaving a blank screen.
+  //
+  // Accepted side effect: the new page runs before its worker does. The
+  // browser checks sw.js only after this navigation has been answered, so on
+  // the first online launch after a deploy, the old worker serves the NEW
+  // index.html from the network. That page then gets the OLD version's
+  // fonts.css, fonts and icons, cache-first below, until the new worker
+  // installs and the page reloads. If the update keeps failing to install
+  // (install's REQUIRED check), every online launch stays in that state. The
+  // network copy is also saved here under the URL that was asked for, so
+  // offline, `/` and `/index.html` can open different versions until the
+  // update lands. The page and its stylesheet are therefore NOT guaranteed to
+  // match. Preferring the cached page while an update is pending would only
+  // shorten that window, not close it, so releases carry the burden instead:
+  // see "Shipping an update" in README.md.
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       const base = new URL('./', self.location).pathname;

@@ -145,3 +145,27 @@ node .claude/serve.js
 
 Serves the repo at <http://localhost:4321>. Shipping a change to an installed
 copy requires bumping `CACHE_NAME` in `sw.js`, or the old version stays cached.
+
+## Shipping an update
+
+Bump `CACHE_NAME` in `sw.js` for every release. The service worker installs
+the new version and reloads the app the next time it is opened while idle.
+
+For a while, though, the new page runs on the old version's files. Pages are
+fetched from the network first, so the first online launch after a deploy
+gets the **new** `index.html` with the **previous** release's `fonts.css`,
+fonts and icons. If the new version fails to install (a required file
+missing, a connection dropped mid-install), that lasts until an install
+succeeds, and an offline launch may open either version. The new page
+can also write data that the previous page then reads. The comment above the
+navigation handler in `sw.js` explains why this is accepted. Two rules keep it
+harmless:
+
+- **Fonts: add, never rename.** Add a new font family or icon font
+  alongside the old ones. Never rename or remove a family the page uses,
+  in `fonts.css` or in the page's CSS. The new page must still render with
+  the previous release's `fonts.css` and icon font.
+- **Stored data: add, never change.** A release may add new keys or fields to
+  what the app stores. It must not rename them, change their shape or change
+  their meaning. The previous page must still read correctly whatever the new
+  page wrote.
