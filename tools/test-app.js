@@ -37,7 +37,7 @@ function dayWithSections(app, cats) {
 describe('harness', () => {
   test('loads the logic out of index.html', () => {
     const app = loadApp();
-    assert.ok(!Array.isArray(app.BUILT_IN_PROGRAMS)); // THROWAWAY: proving CI goes red
+    assert.ok(Array.isArray(app.BUILT_IN_PROGRAMS));
     assert.ok(app.BUILT_IN_PROGRAMS.length >= 1, 'at least one built-in program is bundled');
     assert.equal(typeof app.initSession, 'function');
   });
