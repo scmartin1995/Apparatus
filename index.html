@@ -2603,6 +2603,11 @@ function effectiveDay(day, overrides) {
       // barbell load for a dumbbell movement. The Baseline record itself is
       // untouched and stays on the Strength page.
       item.baselineId = null;
+      // The note is coaching for the prescribed Movement, not for whatever
+      // stands in for it, so it stays behind with the Program. This covers the
+      // Day view and every Session started from the Day, since initSession
+      // reads the resolved Day.
+      item.note = '';
     });
   });
   return eff;
@@ -2964,6 +2969,15 @@ function backfillBw(group) {
     if (!('bw' in group[k])) group[k].bw = isBodyweight({ name: group[k].name });
   });
 }
+// A record finished before substituting cleared the note keeps the prescribed
+// Movement's on its substitute, and history would repeat advice for a different
+// exercise. Done here rather than in cleanGroup, which validates what is there:
+// a draft is put right by backfillSnapshot, its own read path. A record made
+// under a Permanent Substitution before this stores substitutedFor: null, so it
+// cannot be told from an unsubstituted entry and keeps its note.
+function dropSubstituteNotes(group) {
+  Object.keys(group).forEach(k => { if (group[k].substitutedFor) group[k].note = ''; });
+}
 function cleanSession(s, isDraft) {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
   const dayType = safeId(s.dayType, isDraft ? '' : 'unknown');
@@ -2975,6 +2989,7 @@ function cleanSession(s, isDraft) {
     return out;
   }
   backfillBw(out.primaries); backfillBw(out.accessories);
+  [out.primaries, out.ar7, out.accessories].forEach(dropSubstituteNotes);
   // A damaged date keeps the record (dated 1970) rather than dropping it: a
   // dropped record would be erased by the next save.
   const when = s.date == null || isNaN(new Date(s.date).getTime()) ? new Date(0) : new Date(s.date);
@@ -3057,6 +3072,10 @@ function backfillSnapshot(s) {
       if (entry.target === undefined)     entry.target = parseSetsStr(item.sets);
       if (entry.baselineId === undefined) entry.baselineId = item.baselineId || null;
       if (entry.substitutedFor === undefined) entry.substitutedFor = null;
+      // A draft saved before substituting cleared the note still carries the
+      // prescribed Movement's on its substitute. Not a gap to fill, so it is
+      // blanked whatever is there.
+      if (entry.substitutedFor) entry.note = '';
       // The prescribed Movement is in hand here, so this is the one path that
       // can read an imported Program's own bodyweight flag rather than inferring
       // from the name alone. Reachable only because cleanGroup stopped inventing
@@ -3091,6 +3110,11 @@ function substituteEntry(entry, rawName, cat) {
   if (!entry.substitutedFor) entry.substitutedFor = entry.name;
   entry.name = name;
   entry.baselineId = null;
+  // The note is Program text written for the Movement being replaced, frozen
+  // here at initSession. Advice for one exercise is wrong for another, and the
+  // form offers no note of the substitute's own, so it shows none. revertEntry
+  // puts the prescribed note back.
+  entry.note = '';
   // prBase was stamped from the Movement being replaced — its Lift's 1RM, or
   // the best in history under its name — so leaving it would mark and miss PRs
   // for the substitute against the wrong number. Dropped, it is re-derived
