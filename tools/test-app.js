@@ -5142,3 +5142,270 @@ describe('Save Feel refreshes the views behind the Summary', () => {
       'and History behind the Summary lists the new one');
   });
 });
+
+// ── FOLLOW-UP 03: A SUBSTITUTE SHOWS NO COACHING NOTE ──────
+//
+// A Movement's note is coaching for that Movement, so it does not travel with a
+// Substitution: a substituted Conventional Deadlift no longer reads "Highest
+// collateral cost in the program", because the lifter is no longer doing it.
+// The note is copied Program text frozen onto the Session entry, so every seam
+// that copies or reads it has its own rule -- substituting clears it, reverting
+// restores it, the resolved Day carries none on an overridden Movement, and each
+// read path (draft and finished record) blanks it on an entry with
+// substitutedFor set. Decided by Sterling, 2026-11-27.
+//
+// Not covered, by decision: a Session recorded under a Permanent Substitution
+// before this change stores substitutedFor: null, so it cannot be told apart
+// from an unsubstituted entry and keeps its note in history.
+
+// The build before this change, which copied the prescribed note onto a
+// substitute. Drafts and records are authored by driving it, so "a draft saved
+// before this change" is that build's own output and not this file's idea of it.
+const NOTE_INHERITED_COMMIT = '00a1aa1';
+
+const noteInheritedHtml = (() => {
+  let resolved;
+  return () => {
+    if (resolved !== undefined) return resolved;
+    try {
+      const cp = require('node:child_process');
+      const fs = require('node:fs');
+      const os = require('node:os');
+      const p = require('node:path');
+      // A directory of its own, so parallel worktrees running the suite at once
+      // never read a file another run is halfway through writing.
+      const dir = fs.mkdtempSync(p.join(os.tmpdir(), 'apparatus-'));
+      const out = p.join(dir, NOTE_INHERITED_COMMIT + '.html');
+      fs.writeFileSync(out, cp.execFileSync(
+        'git', ['show', NOTE_INHERITED_COMMIT + ':index.html'],
+        { cwd: p.resolve(__dirname, '..'), maxBuffer: 64 * 1024 * 1024 }));
+      loadApp(out); // fail here rather than inside a test
+      resolved = out;
+    } catch (err) {
+      resolved = null;
+      console.error('inherited-note fixture skipped: ' + err.message);
+    }
+    return resolved;
+  };
+})();
+
+const NOTE_INHERITED = noteInheritedHtml();
+const SKIP_NOTE_INHERITED = NOTE_INHERITED
+  ? false
+  : 'the build before this change (' + NOTE_INHERITED_COMMIT + ') could not be loaded';
+
+// The first primary on the first Day with a primary and an accessory Section,
+// and a second Movement beside it that nobody substitutes. Both carry a note
+// that appears nowhere else in the Program, so its absence on screen means the
+// one Movement lost it and nothing else.
+function notedPair(app) {
+  const day = dayWithSections(app, ['primary', 'accessory']);
+  const [sub, kept] = loggedMovements(app, day).map(m => {
+    const [si, ii] = m.key.split('-').map(Number);
+    return Object.assign({}, m, { note: day.sections[si].items[ii].note });
+  }).filter(m => m.note);
+  assert.ok(sub && kept, 'the fixture needs two noted Movements on ' + day.id);
+  [sub, kept].forEach(m => {
+    const everywhere = app.DAYS.flatMap(d => (d.sections || []).flatMap(s => s.items || []))
+      .filter(i => i.note === m.note).length;
+    assert.equal(everywhere, 1, 'the note on ' + m.name + ' is its own');
+  });
+  return { day, sub, kept };
+}
+
+// Whether a rendered view shows a note, as the lifter reads it.
+function showsNote(app, html, note) {
+  return html.includes(app.escHtml(note));
+}
+
+describe('a day-only Substitution shows no coaching note', () => {
+  test('the substitute is logged with no note, and the Movement beside it keeps its own', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, sub, kept } = notedPair(app);
+    startOn(app, day);
+    assert.ok(showsNote(app, renderActive(app, day), sub.note), 'before it, ' + sub.name + ' shows its note');
+
+    assert.ok(substituteVia(app, sub.cat, sub.key, 'Trap Bar Deadlift'));
+
+    const html = renderActive(app, day);
+    assert.ok(!showsNote(app, html, sub.note), 'the substitute does not read the advice for ' + sub.name);
+    assert.equal(app.entryFor(sub.cat, sub.key).note, '', 'and its entry holds none');
+    assert.ok(showsNote(app, html, kept.note), kept.name + ' still shows its own note');
+  });
+
+  test('substituting the substitute again does not bring the note back', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, sub } = notedPair(app);
+    startOn(app, day);
+    substituteVia(app, sub.cat, sub.key, 'Trap Bar Deadlift');
+    substituteVia(app, sub.cat, sub.key, 'Sumo Deadlift');
+    assert.ok(!showsNote(app, renderActive(app, day), sub.note));
+  });
+
+  test('reverting mid-Session brings the prescribed note back', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, sub } = notedPair(app);
+    startOn(app, day);
+    substituteVia(app, sub.cat, sub.key, 'Trap Bar Deadlift');
+
+    assert.ok(revertVia(app, sub.cat, sub.key), 'the revert went through');
+
+    assert.ok(showsNote(app, renderActive(app, day), sub.note), sub.name + ' reads its own note again');
+    assert.equal(app.entryFor(sub.cat, sub.key).note, sub.note);
+  });
+
+  test('the finished record keeps no note on the substitute and its own on the rest', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, sub, kept } = notedPair(app);
+    startOn(app, day);
+    substituteVia(app, sub.cat, sub.key, 'Trap Bar Deadlift');
+    const record = logAndFinish(app);
+    const group = sub.cat === 'primary' ? 'primaries' : 'accessories';
+    assert.equal(record[group][sub.key].note, '');
+    const keptGroup = kept.cat === 'primary' ? 'primaries' : 'accessories';
+    assert.equal(record[keptGroup][kept.key].note, kept.note);
+  });
+});
+
+describe('a Permanent Substitution shows no coaching note', () => {
+  function permanentOn(app) {
+    const pair = notedPair(app);
+    startOn(app, pair.day);
+    assert.ok(substitutePermanently(app, pair.sub.cat, pair.sub.key, 'Trap Bar Deadlift'));
+    // The Session that made it is over; the lifter reads the Program and comes
+    // back to the Day another time.
+    app.session = null;
+    app.clearDraft();
+    return pair;
+  }
+
+  // The Program view lists a Day's Movements by name, with no notes; the Day
+  // view is where the planned Day is read Movement by Movement, note and all.
+  // Both render the resolved Day, so the Day view is where a Permanent
+  // Substitution's note would show.
+  test('the Day view shows none on the substitute and keeps the rest', () => {
+    const app = loadAppWithProgram(PPL);
+    const before = notedPair(app);
+    assert.ok(showsNote(app, dayViewHtml(app, before.day), before.sub.note),
+      'before it, the Day view shows the note');
+    const { day, sub, kept } = permanentOn(app);
+
+    const html = dayViewHtml(app, day);
+    assert.ok(html.includes('Trap Bar Deadlift'), 'the Day prescribes the substitute');
+    assert.ok(!showsNote(app, html, sub.note), 'with none of ' + sub.name + '\'s coaching');
+    assert.ok(showsNote(app, html, kept.note), kept.name + ' keeps its own note');
+  });
+
+  test('the Program view shows no Movement notes at all, substituted or not', () => {
+    const app = loadAppWithProgram(PPL);
+    const { sub, kept } = permanentOn(app);
+    const html = progHtml(app);
+    assert.ok(subRowFor(app, html, 'Trap Bar Deadlift', sub.name), 'the substitute is in the Program view');
+    assert.ok(!showsNote(app, html, sub.note) && !showsNote(app, html, kept.note));
+  });
+
+  test('a new Session from that Day shows none on the substitute', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, sub, kept } = permanentOn(app);
+
+    startOn(app, day);
+    const entry = app.entryFor(sub.cat, sub.key);
+    assert.equal(entry.name, 'Trap Bar Deadlift', 'the Day now prescribes the substitute');
+    assert.equal(entry.note, '', 'and starts it with no note');
+    const html = renderActive(app, day);
+    assert.ok(!showsNote(app, html, sub.note), 'so the Session agrees with the Program view');
+    assert.ok(showsNote(app, html, kept.note));
+  });
+
+  test('removing it from the Program view brings the note back', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, sub } = permanentOn(app);
+    revertFromProgramView(app, 'Trap Bar Deadlift');
+    assert.ok(showsNote(app, dayViewHtml(app, day), sub.note), sub.name + ' reads its own note again');
+    startOn(app, day);
+    assert.equal(app.entryFor(sub.cat, sub.key).note, sub.note, 'and the next Session starts with it');
+  });
+
+  test('the resolver hands the Program\'s note to no one, and leaves the Program its own', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, sub } = notedPair(app);
+    const eff = app.effectiveDay(day, storeWith(day.id, sub.name, 'Trap Bar Deadlift', '3 × 5'));
+    assert.equal(movementNamed(eff, 'Trap Bar Deadlift').note, '');
+    assert.equal(movementNamed(day, sub.name).note, sub.note, 'the Program definition is untouched');
+  });
+});
+
+describe('a Substitution saved before the note rule', { skip: SKIP_NOTE_INHERITED }, () => {
+  // A Session the old build substituted on, its own way: the substitute's entry
+  // still carries the prescribed note.
+  function oldSession() {
+    const old = loadAppWithProgram(PPL, NOTE_INHERITED);
+    const pair = notedPair(old);
+    startOn(old, pair.day);
+    assert.ok(substituteVia(old, pair.sub.cat, pair.sub.key, 'Trap Bar Deadlift'));
+    assert.equal(old.entryFor(pair.sub.cat, pair.sub.key).note, pair.sub.note,
+      'the build this fixture comes from is supposed to hand the substitute the prescribed note');
+    return { old, pair };
+  }
+
+  test('a draft resumes with no note on its substituted entry', () => {
+    const { old, pair } = oldSession();
+    old.saveDraft();
+    const app = loadAppWithProgram(PPL);
+    app.localStorage.setItem('apparatus_draft', old.localStorage.getItem('apparatus_draft'));
+
+    app.session = app.backfillSnapshot(app.loadDraft());
+    app.activeDay = pair.day.id;
+
+    const html = renderActive(app, pair.day);
+    assert.ok(html.includes('Trap Bar Deadlift'), 'the draft resumed with its substitute');
+    assert.ok(!showsNote(app, html, pair.sub.note), 'and without the inherited note');
+    assert.ok(showsNote(app, html, pair.kept.note), pair.kept.name + ' keeps its own');
+  });
+
+  test('a finished Session in history has no inherited note on its substituted entry', () => {
+    const { old, pair } = oldSession();
+    logAndFinish(old);
+    const app = loadAppWithProgram(PPL);
+    app.localStorage.setItem('apparatus_sessions', old.localStorage.getItem('apparatus_sessions'));
+
+    const rec = app.getAllSessions()[0];
+    const group = g => g === 'primary' ? 'primaries' : 'accessories';
+    assert.equal(rec[group(pair.sub.cat)][pair.sub.key].substitutedFor, pair.sub.name);
+    assert.equal(rec[group(pair.sub.cat)][pair.sub.key].note, '', 'the substitute reads no note');
+    assert.equal(rec[group(pair.kept.cat)][pair.kept.key].note, pair.kept.note,
+      'an unsubstituted entry keeps its own');
+  });
+
+  test('reading it leaves the stored Score alone, and the same work scores the same', () => {
+    // A note is never read by a scorer. Asserted here rather than in the shared
+    // parity block, so this ticket owns its own case.
+    const { old } = oldSession();
+    const oldRecord = logAndFinish(old);
+
+    const app = loadAppWithProgram(PPL);
+    app.localStorage.setItem('apparatus_sessions', old.localStorage.getItem('apparatus_sessions'));
+    const read = app.getAllSessions()[0];
+    assert.deepEqual(plain(read.score), plain(oldRecord.score), 'the stored Score is untouched');
+    assert.deepEqual(plain(app.computeScore(read)), plain(old.computeScore(oldRecord)),
+      'and recomputing it here gives the old build\'s answer');
+
+    const now = loadAppWithProgram(PPL);
+    const pair = notedPair(now);
+    startOn(now, pair.day);
+    substituteVia(now, pair.sub.cat, pair.sub.key, 'Trap Bar Deadlift');
+    assert.deepEqual(plain(logAndFinish(now).score), plain(oldRecord.score),
+      'the same Substitution and work, logged today, earns the same Score');
+  });
+
+  test('a Permanent Substitution scores the same with its note gone', () => {
+    const run = html => {
+      const app = loadAppWithProgram(PPL, html);
+      const pair = notedPair(app);
+      writeOverrides(app, storeWith(pair.day.id, pair.sub.name, 'Trap Bar Deadlift', '3 × 5'));
+      startOn(app, pair.day);
+      return plain(logAndFinish(app).score);
+    };
+    assert.deepEqual(run(), run(NOTE_INHERITED));
+  });
+});
