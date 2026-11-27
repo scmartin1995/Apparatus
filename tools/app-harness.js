@@ -103,9 +103,10 @@ function makeElement(id) {
     addEventListener() {},
     removeEventListener() {},
     getBoundingClientRect() { return { width: 0, height: 0, top: 0, left: 0, bottom: 0, right: 0 }; },
-    // A fresh element, as document.querySelector gives, so code that builds
-    // markup and then wires up a child (the Undo toast's button) can run.
-    querySelector(sel) { return makeElement(sel); },
+    // A bare tag the element's own markup contains comes back as an element,
+    // so code that builds markup and wires up a child (the Undo toast's
+    // button) can run. Anything else is still missing, as before.
+    querySelector(sel) { return /^[a-z]+$/.test(sel) && el.innerHTML.includes('<' + sel) ? makeElement(sel) : null; },
     querySelectorAll() { return []; },
     closest() { return null; },
     appendChild() {},

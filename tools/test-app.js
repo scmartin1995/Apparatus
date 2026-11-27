@@ -12,7 +12,7 @@
 // internal shape of intermediate values. A test that breaks when a class name
 // changes is noise; a test that breaks when a Score changes is the point.
 //
-const { test, describe } = require('node:test');
+const { test, describe, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadApp, loadAppWithProgram, findSection, plain } = require('./app-harness.js');
 
@@ -5425,7 +5425,11 @@ function nextMillisecond() {
   const t = Date.now();
   while (Date.now() === t) { /* spin */ }
 }
+// A delete arms a real ten-second timer; a test that fails before its Undo
+// would otherwise hold the run open until it fires.
+const armedUndos = [];
 function deleteViaHistory(app, recordId) {
+  armedUndos.push(app);
   app.answerConfirm(true);
   app.deleteSession(recordId);
   assert.ok(!app.getAllSessions().some(s => s.id === recordId), 'the Session left history');
@@ -5438,6 +5442,8 @@ function undoViaToast(app, recordId) {
 }
 
 describe('deleting and undoing a Session keeps its Substitution decisions', () => {
+  afterEach(() => { armedUndos.splice(0).forEach(app => app.finishUndo()); });
+
   test('a Session deleted and then undone is not asked about its Substitutions again', () => {
     const app = loadAppWithProgram(PPL);
     const { made, record } = sessionWithSubstitutions(app, [
@@ -5457,7 +5463,11 @@ describe('deleting and undoing a Session keeps its Substitution decisions', () =
     assert.equal(promptOn(app, back), '', 'so its Summary does not ask again');
   });
 
-  test('deciding about another Session while the Undo is pending loses nothing', () => {
+  // Deciding about another Session means opening its Summary, and opening a
+  // Summary makes a pending delete final. So the lifter can never get a
+  // Session back after the decision store was saved without it: either the
+  // Undo is gone, or the Session returns with its answers.
+  test('deciding about another Session never brings the deleted one back without its answers', () => {
     const app = loadAppWithProgram(PPL);
     const first = sessionWithSubstitutions(app, [['primary', 'Trap Bar Deadlift']]);
     app.dismissPromotionPrompt(first.record.id);
@@ -5468,13 +5478,20 @@ describe('deleting and undoing a Session keeps its Substitution decisions', () =
     assert.ok(decided, 'the first Session was decided');
 
     deleteViaHistory(app, first.record.id);
+    app.openSessionSummary(second.record.id);
+    assert.ok(promptOn(app, second.record).includes('Cable Fly'), 'the other Session asks about its swap');
     app.dismissPromotionPrompt(second.record.id);
-    assert.ok(storedDecisions(app)[second.record.id], 'the decision on the other Session was saved');
-    const back = undoViaToast(app, first.record.id);
+    assert.ok(storedDecisions(app)[second.record.id], 'and the answer was saved');
+    app.undoDeleteSession();
 
-    assert.deepEqual(storedDecisions(app)[first.record.id], decided,
-      'the deleted Session kept its answers through the other save');
-    assert.equal(promptOn(app, back), '', 'so the lifter is not asked again');
+    const back = app.getAllSessions().find(s => s.id === first.record.id);
+    if (back) {
+      assert.deepEqual(storedDecisions(app)[first.record.id], decided, 'it came back with its answers');
+      assert.equal(promptOn(app, back), '', 'so the lifter is not asked again');
+    } else {
+      assert.equal(storedDecisions(app)[first.record.id], undefined,
+        'the delete was final, and its answers went with it');
+    }
   });
 
   test('deleting a Session with a day-only Substitution leaves Permanent Substitutions alone', () => {

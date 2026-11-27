@@ -3560,10 +3560,6 @@ function saveDecisions(recordId, decisions) {
     // aged out are dead weight. Keep only the ones history can still show.
     const live = {};
     getAllSessions().forEach(s => { if (map[s.id]) live[s.id] = map[s.id]; });
-    // A deleted Session is out of history while its Undo is pending, but Undo
-    // brings it back, so its answers have to still be here when it does.
-    const pending = undoDelete && undoDelete.rec.id;
-    if (pending && map[pending]) live[pending] = map[pending];
     localStorage.setItem(LS_SUB_DECISIONS, JSON.stringify(live));
   } catch(e) {}
 }
