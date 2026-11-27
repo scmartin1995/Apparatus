@@ -37,12 +37,19 @@ const arg = name => { const i = args.indexOf('--' + name); return i >= 0 ? args[
 
 const port = Number(arg('port') || 8742);
 const settings = { rev: arg('rev') || null, dir: arg('dir') ? path.resolve(arg('dir')) : ROOT, missing: [], drop: [], delay: 0 };
+// A build served from git must name a commit: fail now, not with a page of 404s.
+const checkRev = rev => execFileSync('git', ['rev-parse', '--verify', '--quiet', rev + '^{commit}'], { cwd: ROOT, stdio: 'ignore' });
+if (!(port > 0)) { console.error('[pages] --port must be a number'); process.exit(1); }
+if (settings.rev) {
+  try { checkRev(settings.rev); } catch (e) { console.error('[pages] not a commit: ' + settings.rev); process.exit(1); }
+}
 // Pages stamps a file with the time it was deployed; a new build is a new deploy.
 let deployedAt = new Date();
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8', '.md': 'text/markdown; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
@@ -50,7 +57,8 @@ const TYPES = {
 function readFile(rel) {
   if (settings.rev) {
     try {
-      return execFileSync('git', ['show', settings.rev + ':' + rel], { cwd: ROOT, maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'ignore'] });
+      // cat-file blob, not show: a folder name must be a 404, not a tree listing.
+      return execFileSync('git', ['cat-file', 'blob', settings.rev + ':' + rel], { cwd: ROOT, maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'ignore'] });
     } catch (e) {
       return null;
     }
@@ -67,7 +75,7 @@ function control(url, res) {
   const q = url.searchParams;
   if (q.has('rev')) {
     const rev = q.get('rev');
-    if (rev) execFileSync('git', ['rev-parse', '--verify', rev + '^{commit}'], { cwd: ROOT, stdio: 'ignore' });
+    if (rev) checkRev(rev);
     settings.rev = rev || null;
     deployedAt = new Date();
   }
@@ -81,14 +89,18 @@ function control(url, res) {
 }
 
 http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+  const bad = () => { res.writeHead(400, { 'Cache-Control': 'no-store' }); res.end('Bad request\n'); };
+  // Prefixed, not resolved against a base: a path starting // must not be read as a host.
+  let url;
+  try { url = new URL('http://localhost' + req.url); } catch (e) { bad(); return; }
   if (url.pathname === '/__pages') {
     try { control(url, res); } catch (e) { res.writeHead(400, { 'Cache-Control': 'no-store' }); res.end(String(e.message) + '\n'); }
     return;
   }
-  let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+  let rel;
+  try { rel = decodeURIComponent(url.pathname).replace(/^\/+/, ''); } catch (e) { bad(); return; }
   if (rel === '' || rel.endsWith('/')) rel += 'index.html';
-  const page = rel.endsWith('index.html');
+  const page = rel === 'index.html' || rel.endsWith('/index.html');
   const log = status => console.log('[pages] ' + req.method + ' ' + url.pathname + ' ' + status);
 
   if (matches(settings.drop, rel)) { log('dropped'); req.socket.destroy(); return; }
