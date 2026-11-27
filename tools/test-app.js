@@ -5519,3 +5519,204 @@ describe('deleting and undoing a Session keeps its Substitution decisions', () =
       'the next Session still starts with the substitute in place');
   });
 });
+
+// ── FOLLOW-UP 05: END-OF-SESSION KEEP, AND BACKUP / RESTORE ─
+//
+// Two routes lead to a Permanent Substitution: the "make it permanent" box on
+// the substitution form during the Session, and Keep on the Summary after it.
+// Only the box had ever been driven. Backup and restore had never been run
+// with a Permanent Substitution or a Substitution decision in storage; both
+// keys are meant to travel through the apparatus_ prefix scan in
+// exportBackup and restoreBackup, and these tests carry them through the way
+// a lifter does -- Back Up All Data, then the file picked on the Import page.
+
+// A scheme unlike anything the Program prescribes, so a stored scheme that
+// matches it can only have come from the lifter. AR-7 keeps seven rounds, so
+// only its rep range is the lifter's to change.
+function schemeFor(cat) {
+  return cat === 'ar7' ? { repLow: 15, repHigh: 20 } : { sets: 4, repLow: 6, repHigh: 8 };
+}
+
+describe('Keep on the Summary and the box on the form', () => {
+  test('both routes leave the same Permanent Substitution', () => {
+    ['primary', 'ar7', 'accessory'].forEach(cat => {
+      const viaBox = loadAppWithProgram(AR7);
+      const boxDay = dayWithSections(viaBox, ['primary', 'ar7', 'accessory']);
+      const m = firstLogged(viaBox, boxDay, cat);
+      startOn(viaBox, boxDay);
+      assert.ok(substitutePermanently(viaBox, m.cat, m.key, 'Machine Version', schemeFor(cat)),
+        cat + ': the form accepted it with the box ticked');
+      logAndFinish(viaBox);
+
+      const viaKeep = loadAppWithProgram(AR7);
+      const keepDay = viaKeep.DAYS.find(d => d.id === boxDay.id);
+      startOn(viaKeep, keepDay);
+      assert.ok(substituteWithScheme(viaKeep, m.cat, m.key, 'Machine Version', schemeFor(cat)),
+        cat + ': the form accepted it for today only');
+      const record = logAndFinish(viaKeep);
+      assert.ok(promptRow(viaKeep, record, 'Machine Version').includes(m.name),
+        cat + ': the Summary offers to keep it');
+      viaKeep.promoteSubstitution(record.id, m.key);
+
+      const kept = plain(viaKeep.readOverrideMap());
+      assert.ok(kept[viaKeep.currentProgramId()][keepDay.id][m.name],
+        cat + ': Keep made it permanent');
+      assert.deepEqual(kept, plain(viaBox.readOverrideMap()),
+        cat + ': the override store is the same whichever route made it');
+      assert.deepEqual(plain(entryIn(viaKeep.initSession(keepDay.id), m.cat, m.key)),
+        plain(entryIn(viaBox.initSession(boxDay.id), m.cat, m.key)),
+        cat + ': and the next Session starts the same either way');
+    });
+  });
+
+  test('Keep carries the scheme the Session ended with, not the one it was substituted at', () => {
+    const app = loadAppWithProgram(PPL);
+    const day = dayWithSections(app, ['primary']);
+    const m = firstLogged(app, day, 'primary');
+    const prescribed = movementNamed(day, m.name).sets;
+    startOn(app, day);
+    assert.ok(substituteWithScheme(app, m.cat, m.key, 'Trap Bar Deadlift', { sets: 4, repLow: 6, repHigh: 8 }),
+      'the form accepted the first scheme');
+    assert.ok(substituteWithScheme(app, m.cat, m.key, 'Trap Bar Deadlift', { sets: 5, repLow: 3, repHigh: 5 }),
+      'and the lifter changed it later in the Session');
+    const record = logAndFinish(app);
+    assert.equal(record.primaries[m.key].setsStr, '5 × 3–5', 'the Session ended on the second scheme');
+
+    app.promoteSubstitution(record.id, m.key);
+
+    const stored = plain(app.loadOverrides())[day.id][m.name];
+    assert.deepEqual(stored, { name: 'Trap Bar Deadlift', sets: '5 × 3–5' },
+      'the Permanent Substitution starts from what the lifter actually did');
+    assert.notEqual(stored.sets, '4 × 6–8', 'not the scheme it was first substituted at');
+    assert.notEqual(stored.sets, prescribed, 'nor the one the Program prescribes');
+    const next = app.initSession(day.id).primaries[m.key];
+    assert.equal(next.setsStr, '5 × 3–5', 'so the next Session prescribes it');
+    assert.equal(next.sets.length, 5, 'with five sets to log against');
+  });
+});
+
+// Back Up All Data, as the text of the file the lifter saves.
+function backUp(app) {
+  const before = app.downloads().length;
+  app.exportBackup();
+  const saved = app.downloads();
+  assert.equal(saved.length, before + 1, 'Back Up All Data saved one file');
+  return saved[saved.length - 1].text;
+}
+
+// Picks the backup file on the Import page and confirms, the way a lifter
+// restores onto a device, then comes back after the reload restoring ends in.
+function restoreFrom(app, text) {
+  app.answerConfirm(true);
+  const reloads = app.reloads();
+  app.handleProgramFile(app.fileOf('apparatus-backup-2026-11-27.json', text));
+  assert.ok(!app.document.getElementById('importStatus').textContent.includes('failed'),
+    'the restore reported no failure');
+  assert.equal(app.reloads(), reloads + 1, 'the app reloads onto the restored data');
+  return reopenApp(app);
+}
+
+// A device holding a Permanent Substitution and both kinds of decision: a
+// Session whose primary was kept and whose accessory was left as a one-off,
+// then a later Session of the same Day that starts with the kept substitute in
+// place and substitutes nothing.
+function deviceWithDecisions() {
+  const app = loadAppWithProgram(PPL);
+  const { day, made, record } = sessionWithSubstitutions(app, [
+    ['primary', 'Trap Bar Deadlift'],
+    ['accessory', 'Cable Fly'],
+  ]);
+  app.promoteSubstitution(record.id, made[0].key);
+  app.dismissPromotionPrompt(record.id);
+  startOn(app, day);
+  logAndFinish(app);
+  return { app, day, made, record };
+}
+
+// Another device with data of its own, which a restore replaces.
+function otherDevice() {
+  const app = loadAppWithProgram(PPL);
+  const day = dayWithSections(app, ['accessory']);
+  const m = firstLogged(app, day, 'accessory');
+  app.setOverride(day.id, m.name, 'Band Pull-Apart', '2 × 20–25');
+  return app;
+}
+
+describe('a backup holding Permanent Substitutions and decisions', () => {
+  test('restores the override store and the decision store exactly', () => {
+    const { app, record } = deviceWithDecisions();
+    const overrides = app.localStorage.getItem(app.LS_OVERRIDES);
+    const decisions = app.localStorage.getItem(app.LS_SUB_DECISIONS);
+    assert.deepEqual(Object.values(plain(app.decisionsFor(record.id))).sort(), ['day-only', 'permanent'],
+      'the device holds both kinds of decision');
+
+    const restored = restoreFrom(otherDevice(), backUp(app));
+
+    assert.equal(restored.localStorage.getItem(restored.LS_OVERRIDES), overrides,
+      'the override store came back exactly, replacing what the device had');
+    assert.equal(restored.localStorage.getItem(restored.LS_SUB_DECISIONS), decisions,
+      'and the decision store with it');
+    assert.equal(restored.currentProgramId(), app.currentProgramId(), 'on the same Program');
+    assert.deepEqual(plain(restored.loadOverrides()), plain(app.loadOverrides()));
+    assert.deepEqual(plain(restored.decisionsFor(record.id)), plain(app.decisionsFor(record.id)));
+  });
+
+  test('the restored Program starts the kept substitute, and asks nothing already answered', () => {
+    const { app, day, made, record } = deviceWithDecisions();
+
+    const restored = restoreFrom(otherDevice(), backUp(app));
+
+    const next = restored.initSession(day.id);
+    assert.equal(next.primaries[made[0].key].name, 'Trap Bar Deadlift',
+      'the next Session starts with the Permanent Substitution in place');
+    assert.equal(next.primaries[made[0].key].setsStr, app.initSession(day.id).primaries[made[0].key].setsStr,
+      'at the scheme it was kept at');
+    assert.equal(entryIn(next, made[1].cat, made[1].key).name, made[1].name,
+      'and the one-off is not carried into it');
+    const fromHistory = restored.getAllSessions().find(s => s.id === record.id);
+    assert.equal(promptOn(restored, fromHistory), '',
+      'the restored Summary does not ask again about Substitutions already decided');
+  });
+
+  test('restored Sessions show their Substitutions in history as before', () => {
+    const { app, made, record } = deviceWithDecisions();
+    const historyBefore = renderHistory(app);
+    const summaryBefore = summaryWithoutEditLog(app, record);
+
+    const restored = restoreFrom(otherDevice(), backUp(app));
+
+    const historyAfter = renderHistory(restored);
+    assert.equal(historyAfter.split('Substituted').length - 1, 1,
+      'the substituted Session is marked, and the later one is not');
+    assert.equal(historyAfter, historyBefore, 'the history list reads as it did before the backup');
+    const fromHistory = restored.getAllSessions().find(s => s.id === record.id);
+    const summaryAfter = summaryWithoutEditLog(restored, fromHistory);
+    made.forEach(m => {
+      assert.ok(summaryAfter.includes(m.to), 'the Summary names ' + m.to);
+      assert.ok(summaryAfter.includes(m.name), 'and the ' + m.name + ' it replaced');
+    });
+    assert.equal(summaryAfter, summaryBefore, 'the Summary reads as it did before the backup');
+  });
+});
+
+describe('a backup taken before any Permanent Substitution', () => {
+  test('restored onto a device that has some, leaves none behind', () => {
+    const before = loadAppWithProgram(PPL);
+    const day = dayWithSections(before, ['primary']);
+    startOn(before, day);
+    logAndFinish(before);
+    assert.equal(before.localStorage.getItem(before.LS_OVERRIDES), null, 'the backup holds no overrides');
+    assert.equal(before.localStorage.getItem(before.LS_SUB_DECISIONS), null, 'and no decisions');
+
+    const { app: device } = deviceWithDecisions();
+    const restored = restoreFrom(device, backUp(before));
+
+    assert.deepEqual(plain(restored.loadOverrides()), {},
+      'the Permanent Substitutions the device had are gone, as they were when the backup was taken');
+    assert.equal(restored.localStorage.getItem(restored.LS_SUB_DECISIONS), null,
+      'and so are its decisions');
+    const m = firstLogged(restored, restored.DAYS.find(d => d.id === day.id), 'primary');
+    assert.equal(restored.initSession(day.id).primaries[m.key].name, m.name,
+      'so the next Session prescribes what the Program prescribes');
+  });
+});

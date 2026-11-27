@@ -204,6 +204,8 @@ const EXPORTS = [
   'undecidedSubstitutions', 'promoteSubstitution', 'dismissPromotionPrompt',
   'updateFeel', 'saveFeelDraft',
   'generateCSVTemplate', 'renderBaselines',
+  'exportBackup', 'restoreBackup', 'handleProgramFile',
+  'decisionsFor', 'LS_SUB_DECISIONS', 'LS_OVERRIDES', 'LS_SESSIONS',
   'prescribedItemFor', 'loggedValuesIn', 'revertEntry', 'revertSubstitution',
   'removeOverride', 'revertPermanentSubstitution', 'revertPermanentHere',
   'renderProgPage', 'renderOffDays',
@@ -264,11 +266,40 @@ function loadApp(htmlPath) {
   let clockMs = 0;
   const now = () => (clockMs += 3.6e6);
 
+  // Files the app hands the browser to save, and files the lifter hands it to
+  // read. A download goes through a Blob and URL.createObjectURL, so the Blob
+  // keeps its text where a test can read it synchronously, and the object URL
+  // records it. A file chosen for import is read with FileReader, which here
+  // delivers a file's text straight to onload: the app reads nothing after
+  // readAsText, so firing synchronously changes no order the app relies on.
+  // reload() is counted, because restoring a backup ends in one and a test
+  // then has to load the app again from what was left in storage.
+  const downloads = [];
+  let reloads = 0;
+  class HarnessBlob extends globalThis.Blob {
+    constructor(parts, options) {
+      super(parts, options);
+      this.harnessText = (parts || []).map(String).join('');
+    }
+  }
+  class HarnessURL extends globalThis.URL {
+    static createObjectURL(blob) {
+      downloads.push({ type: blob.type, text: blob.harnessText });
+      return 'blob:harness/' + downloads.length;
+    }
+    static revokeObjectURL() {}
+  }
+  class HarnessFileReader {
+    readAsText(file) {
+      if (this.onload) this.onload({ target: { result: file.harnessText } });
+    }
+  }
+
   const sandbox = {
     document: makeDocument(),
     localStorage,
     navigator: { userAgent: 'node' },
-    location: { href: 'http://localhost/', reload() {} },
+    location: { href: 'http://localhost/', reload() { reloads++; } },
     console,
     setTimeout, clearTimeout, setInterval, clearInterval,
     performance: { now },
@@ -283,9 +314,9 @@ function loadApp(htmlPath) {
     scrollTo() {},
     atob: globalThis.atob,
     btoa: globalThis.btoa,
-    URL: globalThis.URL,
-    Blob: globalThis.Blob,
-    FileReader: class { readAsText() {} },
+    URL: HarnessURL,
+    Blob: HarnessBlob,
+    FileReader: HarnessFileReader,
     AudioContext: FakeAudioContext,
   };
 
@@ -304,6 +335,10 @@ function loadApp(htmlPath) {
   app.answerConfirm = answer => { prompts.answer = !!answer; };
   app.confirmsAsked = () => prompts.asked.slice();
   app.lastConfirm = () => prompts.asked[prompts.asked.length - 1] || null;
+  app.downloads = () => downloads.slice();
+  app.reloads = () => reloads;
+  // A file the lifter picks, the way handleProgramFile receives one.
+  app.fileOf = (name, text) => ({ name, size: text.length, harnessText: text });
   return app;
 }
 
