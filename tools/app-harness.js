@@ -204,6 +204,9 @@ const EXPORTS = [
   'prescribedItemFor', 'loggedValuesIn', 'revertEntry', 'revertSubstitution',
   'removeOverride', 'revertPermanentSubstitution', 'revertPermanentHere',
   'renderProgPage', 'renderOffDays',
+  // Navigation, so a test can leave a view open behind the Summary and come back.
+  'openProgPage', 'closeProgPage', 'closeSummary', 'switchDay',
+  'showHistoryPage', 'openSessionSummary',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];

@@ -5009,3 +5009,136 @@ describe('a Session logged before the bodyweight flag existed', { skip: SKIP_LEG
       'the Program says this one is bodyweight, and on a draft the Day is in reach to say so');
   });
 });
+
+// ── FOLLOW-UP 02: THE VIEWS BEHIND THE SUMMARY ─────────────
+
+// The Summary slides over whatever the lifter had open, and Keep and Save Feel
+// change what those views show. These tests never render a view themselves:
+// they read each container as the handler left it, which is what the lifter is
+// looking at once the Summary is out of the way.
+function shownIn(app, id) {
+  return app.document.getElementById(id).innerHTML;
+}
+function textOf(html) {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+}
+// The Day view's last-score chip, read as the lifter reads it: "Last Pul 78".
+function lastScoreChip(app) {
+  const m = textOf(shownIn(app, 'content')).match(/Last \S+ (\d+)/);
+  return m ? Number(m[1]) : null;
+}
+// A finished, unrated Session left on its Summary, with the Day it was on
+// behind it the way finishSession leaves it.
+function unratedOnSummary(app) {
+  const day = dayWithSections(app, ['primary']);
+  startOn(app, day);
+  const record = logAndFinishUnrated(app);
+  assert.ok(app.document.getElementById('summaryPage').classList.contains('open'),
+    'the Summary is up');
+  return { day, record };
+}
+function rateFeel(app, recordId, n) {
+  ['energy', 'effort', 'recovery'].forEach(k => app.updateFeel(recordId, k, n));
+  app.saveFeelDraft(recordId);
+}
+function otherTrainingDay(app, day) {
+  return app.DAYS.find(d => !d.isOff && d.id !== day.id);
+}
+
+describe('Keep refreshes the views behind the Summary', () => {
+  test('the Program view shows the Permanent Substitution and its marker straight away', () => {
+    const app = loadAppWithProgram(PPL);
+    const { made, record } = sessionWithSubstitutions(app, [['primary', 'Trap Bar Deadlift']]);
+    // The lifter opens the Program view from the nav; the Summary stays on top.
+    app.openProgPage();
+    assert.ok(!shownIn(app, 'progBody').includes('Trap Bar Deadlift'),
+      'before Keep the Program view prescribes ' + made[0].name);
+
+    app.promoteSubstitution(record.id, made[0].key);
+
+    const html = shownIn(app, 'progBody');
+    assert.ok(subRowFor(app, html, 'Trap Bar Deadlift', made[0].name),
+      'the Program view marks the substitute and says what it replaces');
+    assert.ok(!progWithoutSubRows(html).includes(made[0].name),
+      'and no longer lists ' + made[0].name + ' as prescribed');
+  });
+
+  test('the Day view shows the Permanent Substitution and its marker straight away', () => {
+    const app = loadAppWithProgram(PPL);
+    const { made, record } = sessionWithSubstitutions(app, [['primary', 'Trap Bar Deadlift']]);
+    assert.ok(!textOf(shownIn(app, 'content')).includes('replaces ' + made[0].name),
+      'before Keep the Day view marks nothing');
+
+    app.promoteSubstitution(record.id, made[0].key);
+
+    const text = textOf(shownIn(app, 'content'));
+    assert.ok(text.includes('Trap Bar Deadlift'), 'the Day view lists the substitute');
+    assert.ok(text.includes('Substituted replaces ' + made[0].name),
+      'marked as a Substitution of ' + made[0].name);
+  });
+
+  test('both stay right after closing the Summary and navigating away and back', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, made, record } = sessionWithSubstitutions(app, [['primary', 'Trap Bar Deadlift']]);
+    app.openProgPage();
+    app.promoteSubstitution(record.id, made[0].key);
+
+    app.closeSummary();
+    assert.ok(subRowFor(app, shownIn(app, 'progBody'), 'Trap Bar Deadlift', made[0].name),
+      'closing the Summary uncovers the Program view as Keep left it');
+    app.closeProgPage();
+    app.openProgPage();
+    assert.ok(subRowFor(app, shownIn(app, 'progBody'), 'Trap Bar Deadlift', made[0].name),
+      'and it is still right after leaving and coming back');
+
+    app.switchDay(otherTrainingDay(app, day).id);
+    app.switchDay(day.id);
+    assert.ok(textOf(shownIn(app, 'content')).includes('Substituted replaces ' + made[0].name),
+      'the Day view too, after switching away and back');
+  });
+});
+
+describe('Save Feel refreshes the views behind the Summary', () => {
+  test('the Day\'s last-score chip shows the new Score straight away', () => {
+    const app = loadAppWithProgram(PPL);
+    const { record } = unratedOnSummary(app);
+    const before = lastScoreChip(app);
+    assert.equal(before, record.score.total, 'the chip shows the unrated Score');
+
+    rateFeel(app, record.id, 5);
+
+    const rated = app.getAllSessions().find(s => s.id === record.id);
+    assert.notEqual(rated.score.total, before, 'rating the Feel moved the Score');
+    assert.equal(lastScoreChip(app), rated.score.total, 'and the chip shows the new one');
+  });
+
+  test('the chip stays right after closing the Summary and switching Days', () => {
+    const app = loadAppWithProgram(PPL);
+    const { day, record } = unratedOnSummary(app);
+    rateFeel(app, record.id, 5);
+    const total = app.getAllSessions().find(s => s.id === record.id).score.total;
+
+    app.closeSummary();
+    assert.equal(lastScoreChip(app), total, 'closing the Summary uncovers the new Score');
+    app.switchDay(otherTrainingDay(app, day).id);
+    app.switchDay(day.id);
+    assert.equal(lastScoreChip(app), total, 'and it is still there after switching away and back');
+  });
+
+  test('History, when the Summary was opened from it, shows the new Score', () => {
+    const app = loadAppWithProgram(PPL);
+    const { record } = unratedOnSummary(app);
+    app.closeSummary();
+    app.showHistoryPage();
+    app.openSessionSummary(record.id);
+    assert.ok(shownIn(app, 'historyContent').includes(', score ' + record.score.total),
+      'History lists the unrated Score');
+
+    rateFeel(app, record.id, 5);
+
+    const total = app.getAllSessions().find(s => s.id === record.id).score.total;
+    assert.notEqual(total, record.score.total, 'rating the Feel moved the Score');
+    assert.ok(shownIn(app, 'historyContent').includes(', score ' + total),
+      'and History behind the Summary lists the new one');
+  });
+});
