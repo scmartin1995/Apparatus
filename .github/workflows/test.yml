@@ -1,0 +1,19 @@
+name: Tests
+
+# Runs the behaviour suite on every push and pull request, so a red build is
+# visible without anyone remembering to run it. Nothing is installed: the suite
+# uses only node's built-in test runner, and it exits non-zero on failure.
+on:
+  push:
+  pull_request:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+      - run: node --version
+      - run: node tools/test-app.js
