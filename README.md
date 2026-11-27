@@ -145,3 +145,37 @@ node .claude/serve.js
 
 Serves the repo at <http://localhost:4321>. Shipping a change to an installed
 copy requires bumping `CACHE_NAME` in `sw.js`, or the old version stays cached.
+
+## Shipping an update
+
+Bump `CACHE_NAME` in `sw.js` for every release. The service worker installs
+the new version and, once it takes over, reloads the app straight away if
+nothing is in progress. During a Session it offers a Reload button instead, and
+an update put off with *Later* applies the next time the app is opened while
+idle.
+
+For a while, though, the new page runs on the old version's files. Pages are
+fetched from the network first, so the first online launch after a deploy
+gets the **new** `index.html` with the **previous** release's `fonts.css`,
+fonts and icons. If the new version fails to install (a required file
+missing, a connection dropped mid-install), that lasts until an install
+succeeds, and an offline launch may open either version. The new page
+can also write data that the previous page then reads. The comment above the
+navigation handler in `sw.js` explains why this is accepted. Two rules keep it
+harmless:
+
+- **Fonts: add, never rename.** Add a new font family or icon font
+  alongside the old ones. Never rename or remove a family the page uses,
+  in `fonts.css` or in the page's CSS. The new page must still render with
+  the previous release's `fonts.css` and icon font.
+- **Stored data: teach the reader one release before the writer.** The
+  previous page must still read correctly whatever the new page wrote, and
+  must not throw it away. Adding a field is not automatically safe: the
+  Session reader (`cleanGroup` in `index.html`) rebuilds each entry from the
+  fields it knows and drops the rest, and the next save writes the entry back
+  without them. So any new field, and any change of shape or meaning, takes
+  two releases: first ship a reader that keeps and understands both the old
+  and new form, then ship the release that writes the new form. Never rename a
+  key or reuse it for something else. The baselines move from a flat list to
+  one list per program (`readBaselineMap`) predates this rule and is
+  the pattern to avoid.

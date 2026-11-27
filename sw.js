@@ -32,8 +32,10 @@ const FONT_FILES = [
 ];
 const ICON_FONT = FONT_FILES.find(f => f.startsWith('fonts/material-symbols-outlined.'));
 
-// Files an update can't run without (see install). The page and the font
-// stylesheet must match each other, and without the icon font every icon shows
+// Files an update can't run without (see install). Each version's cache must
+// hold a page and font stylesheet that match each other (a page can still run
+// on the previous version's stylesheet for a while; see the navigation
+// handler below), and without the icon font every icon shows
 // as its text name offline. The text fonts are optional: if one misses, the
 // fetch handler below caches it the next time the app is online.
 const REQUIRED = ['index.html', 'fonts/fonts.css', ICON_FONT];
@@ -182,6 +184,23 @@ self.addEventListener('fetch', event => {
   // good responses are cached, and with a cached copy on hand a slow
   // connection (gym Wi-Fi, one bar) falls back to it after 4 seconds
   // instead of leaving a blank screen.
+  //
+  // Accepted side effect: the new page runs before its worker does. The
+  // browser checks sw.js only after this navigation has been answered, so on
+  // the first online launch after a deploy, the old worker serves the NEW
+  // index.html from the network. That page then gets the OLD version's
+  // fonts.css, fonts and icons, cache-first below, until the new worker
+  // takes over and the page reloads. That reload is immediate only when the
+  // app is idle. During a Session the page waits for the lifter to tap Reload
+  // or reopen the app idle, and once the old cache is deleted its remaining
+  // requests come from the network. If the update keeps failing to install
+  // (install's REQUIRED check), every online launch stays in that state. The
+  // network copy is also saved here under the URL that was asked for, so
+  // offline, `/` and `/index.html` can open different versions until the
+  // update lands. The page and its stylesheet are therefore NOT guaranteed to
+  // match. Preferring the cached page while an update is pending would only
+  // shorten that window, not close it, so releases carry the burden instead:
+  // see "Shipping an update" in README.md.
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       const base = new URL('./', self.location).pathname;
