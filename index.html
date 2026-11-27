@@ -3615,6 +3615,7 @@ window.promoteSubstitution = function(recordId, key) {
   setOverride(record.dayType, row.prescribed, row.name, row.sets);
   markDecided(recordId, key, 'permanent');
   renderSummary(record);
+  refreshBehindSummary();
 };
 // The lifter is done answering: every Substitution still open was a one-off.
 // Recorded as such so the question does not come back for this Session.
@@ -3666,7 +3667,18 @@ window.saveFeelDraft = function(recordId) {
   all[idx].feel = { energy: f.energy, effort: f.effort, recovery: f.recovery };
   all[idx].score = computeScore(all[idx]);
   saveAllSessions(all); window._feelDraft = null; renderSummary(all[idx]);
+  refreshBehindSummary();
 };
+// The Summary slides over whatever the lifter had open, and Keep and Save Feel
+// change what those views show: a Permanent Substitution in the Program and Day
+// views, a new Score on the Day's last-score chip and in History. Re-rendered
+// with the functions navigation uses, so closing the Summary uncovers them right.
+function refreshBehindSummary() {
+  const open = id => document.getElementById(id).classList.contains('open');
+  if (open('progPage')) renderProgPage();
+  if (open('historyPage')) renderHistoryPage();
+  render();
+}
 // ── SESSION EDITING ────────────────────────────────────────
 let summaryEditOpen = false;
 
