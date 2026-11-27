@@ -103,7 +103,9 @@ function makeElement(id) {
     addEventListener() {},
     removeEventListener() {},
     getBoundingClientRect() { return { width: 0, height: 0, top: 0, left: 0, bottom: 0, right: 0 }; },
-    querySelector() { return null; },
+    // A fresh element, as document.querySelector gives, so code that builds
+    // markup and then wires up a child (the Undo toast's button) can run.
+    querySelector(sel) { return makeElement(sel); },
     querySelectorAll() { return []; },
     closest() { return null; },
     appendChild() {},
@@ -207,6 +209,7 @@ const EXPORTS = [
   // Navigation, so a test can leave a view open behind the Summary and come back.
   'openProgPage', 'closeProgPage', 'closeSummary', 'switchDay',
   'showHistoryPage', 'openSessionSummary',
+  'deleteSession', 'undoDeleteSession', 'finishUndo',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];
