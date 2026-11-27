@@ -2929,11 +2929,15 @@ function cleanGroup(g, kind) {
     // Copied only when the entry has them: null is what initSession writes,
     // but a record or draft from before the feature has neither key at all,
     // and inventing null there would tell backfillSnapshot the gap is filled
-    // and leave the Lift with no Baseline binding.
+    // and leave the Lift with no Baseline binding. bw is the same bargain for
+    // the same reason: !!undefined reads as "loaded", and whether a Movement is
+    // bodyweight is a derivation from the Movement, which this validator cannot
+    // see. Absence is passed on to whoever can derive it — backfillSnapshot for
+    // a draft, the record branch of cleanSession for a finished Session.
     if ('substitutedFor' in it) c.substitutedFor = it.substitutedFor == null ? null : String(it.substitutedFor);
     if ('baselineId' in it) c.baselineId = it.baselineId == null ? null : safeId(it.baselineId, '');
     if (kind === 'ar7') { c.weight = numStr(it.weight); c.rounds = Math.min(Math.max(parseInt(it.rounds) || 0, 0), 7); }
-    else { c.bw = !!it.bw; c.sets = cleanSets(it.sets); if (kind === 'acc') c.rpe = Math.min(Math.max(parseInt(it.rpe) || 0, 0), 5); }
+    else { if ('bw' in it) c.bw = !!it.bw; c.sets = cleanSets(it.sets); if (kind === 'acc') c.rpe = Math.min(Math.max(parseInt(it.rpe) || 0, 0), 5); }
     out[k] = c;
   });
   return out;
@@ -2942,6 +2946,23 @@ function cleanFeel(f) {
   if (!f || typeof f !== 'object') return null;
   const v = x => Math.min(Math.max(parseInt(x) || 0, 0), 5);
   return { energy: v(f.energy), effort: v(f.effort), recovery: v(f.recovery) };
+}
+// A Session written before main's 1e37a09 has no bodyweight flag to validate,
+// so the gap has to be filled before anything reads the entry. Left unfilled it
+// reads as "loaded", and the five sites that rewrite a stored Score — Save Feel
+// and the four Edit Log updaters — then throw away every reps-only set of a
+// bodyweight Movement and bake the invented answer into storage: one tap on an
+// accessory's RPE is enough to move a finished Session's Score. A finished
+// record deliberately keeps no programId, so the prescribed Movement is out of
+// reach here and the stored name is what there is — which still reaches the
+// lifter's own per-name preference first, then the name itself. That is the same
+// answer a fresh Session gets for everything but an imported Program's own
+// bodyweight flag, and it is why a draft is backfilled from its Day instead.
+// AR-7 carries no flag at all, which is why only these two groups are visited.
+function backfillBw(group) {
+  Object.keys(group).forEach(k => {
+    if (!('bw' in group[k])) group[k].bw = isBodyweight({ name: group[k].name });
+  });
 }
 function cleanSession(s, isDraft) {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
@@ -2953,6 +2974,7 @@ function cleanSession(s, isDraft) {
     out.startTime = Number(s.startTime) || Date.now();
     return out;
   }
+  backfillBw(out.primaries); backfillBw(out.accessories);
   // A damaged date keeps the record (dated 1970) rather than dropping it: a
   // dropped record would be erased by the next save.
   const when = s.date == null || isNaN(new Date(s.date).getTime()) ? new Date(0) : new Date(s.date);
@@ -3035,6 +3057,11 @@ function backfillSnapshot(s) {
       if (entry.target === undefined)     entry.target = parseSetsStr(item.sets);
       if (entry.baselineId === undefined) entry.baselineId = item.baselineId || null;
       if (entry.substitutedFor === undefined) entry.substitutedFor = null;
+      // The prescribed Movement is in hand here, so this is the one path that
+      // can read an imported Program's own bodyweight flag rather than inferring
+      // from the name alone. Reachable only because cleanGroup stopped inventing
+      // false: a filled gap would look to this guard like nothing to fill.
+      if (entry.bw === undefined && cat !== 'ar7') entry.bw = isBodyweight(item);
     });
   });
   return s;

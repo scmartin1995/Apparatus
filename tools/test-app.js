@@ -4796,3 +4796,216 @@ describe('what decides a substitute is a bodyweight Movement', () => {
     assert.equal('bw' in app.entryFor('ar7', key), false, 'nor does reverting');
   });
 });
+
+// ── A Session logged before the bodyweight flag existed ────
+//
+// main's 1e37a09 added `bw` to the Session entry: the flag that says a Movement
+// is logged by reps alone, so a set with reps and an empty weight box counts.
+// Everything written before that commit has no `bw` key at all, and cleanGroup
+// answered the gap with `!!undefined` -- inventing "loaded" instead of deriving
+// what isBodyweight says today. It is the third instance of the pattern the
+// section above names, and the worst of the three, because the entry it lands
+// on is a finished Session rather than a live one.
+//
+// Reading a record does not rewrite its Score, so the damage waited for a
+// write. Save Feel and the four Edit Log updaters each recompute and save, so
+// the first time the lifter corrected one accessory's RPE on a legacy pull day,
+// three reps-only sets stopped counting, the stored Score moved, and the
+// invented flag went into storage along with it.
+//
+// The fixture is authored by driving that build rather than written by hand, so
+// "no bw key" is a fact about the build and not this file's idea of one.
+const LEGACY_BW_COMMIT = 'be5dc52';
+
+const legacyBwHtml = (() => {
+  let resolved;
+  return () => {
+    if (resolved !== undefined) return resolved;
+    try {
+      const cp = require('node:child_process');
+      const fs = require('node:fs');
+      const os = require('node:os');
+      const p = require('node:path');
+      const out = p.join(os.tmpdir(), 'apparatus-' + LEGACY_BW_COMMIT + '.html');
+      fs.writeFileSync(out, cp.execFileSync(
+        'git', ['show', LEGACY_BW_COMMIT + ':index.html'],
+        { cwd: p.resolve(__dirname, '..'), maxBuffer: 64 * 1024 * 1024 }));
+      loadApp(out); // fail here rather than inside a test
+      resolved = out;
+    } catch (err) {
+      resolved = null;
+      console.error('legacy bodyweight fixture skipped: ' + err.message);
+    }
+    return resolved;
+  };
+})();
+
+const LEGACY_BW = legacyBwHtml();
+const SKIP_LEGACY_BW = LEGACY_BW
+  ? false
+  : 'the pre-bodyweight build (' + LEGACY_BW_COMMIT + ') could not be loaded';
+
+describe('a Session logged before the bodyweight flag existed', { skip: SKIP_LEGACY_BW }, () => {
+  const VERTICAL_PULL = /Pull-Up/;
+  // The accessory the lifter is about to re-rate. By name rather than by
+  // position so a Program edit says so.
+  const CORRECTED = 'Incline DB Curl';
+
+  // The measured case, logged the same way in whichever build it is handed: the
+  // vertical pull done with no added load, so it is three sets of reps and three
+  // empty weight boxes, and the rest of the Day filled in. The ratings are what
+  // put the finished Session at 84 -- one accessory logged but never rated and
+  // three rated, which is an ordinary way for a pull day to come out.
+  function logPullDay(app) {
+    const s = app.initSession('pull');
+    const pullKey = Object.keys(s.primaries).find(k => VERTICAL_PULL.test(s.primaries[k].name));
+    assert.ok(pullKey, 'the fixture needs a bodyweight-named vertical pull in Primary Strength');
+    [8, 7, 6].forEach((reps, i) => { s.primaries[pullKey].sets[i].reps = String(reps); });
+    Object.keys(s.primaries).forEach(k => {
+      if (k === pullKey) return;
+      s.primaries[k].sets.forEach(set => { set.weight = '185'; set.reps = String(s.primaries[k].target.repHigh); });
+    });
+    const ratings = { 'Reverse Pec Deck': 1, 'Incline DB Curl': 5, 'Landmine Rotation': 5 };
+    let rated = 0;
+    Object.keys(s.accessories).forEach(k => {
+      const a = s.accessories[k];
+      if (ratings[a.name]) { a.rpe = ratings[a.name]; rated++; }
+      else a.sets.forEach(set => { set.weight = '40'; set.reps = '10'; });
+    });
+    assert.equal(rated, Object.keys(ratings).length, 'the rated accessories are no longer on this Day');
+    s.feel = { energy: 3, effort: 5, recovery: 4 };
+    return { s, pullKey };
+  }
+
+  // Finishes the Session the build's own way and hands back what it left in
+  // storage, so the record's shape is that build's and not this file's.
+  function storeFrom(app) {
+    app.session = logPullDay(app).s;
+    app.finishSession();
+    return app.localStorage.getItem('apparatus_sessions');
+  }
+
+  function legacyStore() {
+    const raw = storeFrom(loadAppWithProgram(PPL, LEGACY_BW));
+    assert.equal(/"bw"/.test(raw), false,
+      'the build this fixture comes from is supposed to carry no bodyweight flag anywhere');
+    return raw;
+  }
+
+  // A store seeded into a build that reads it, with the record it read back and
+  // a way to name a Movement rather than hard-code the key it took.
+  function seeded(raw) {
+    const app = loadAppWithProgram(PPL);
+    app.localStorage.setItem('apparatus_sessions', raw);
+    const rec = app.getAllSessions()[0];
+    assert.ok(rec, 'the seeded record survived being read');
+    const keyFor = (group, match) => Object.keys(rec[group]).find(k =>
+      typeof match === 'string' ? rec[group][k].name === match : match.test(rec[group][k].name));
+    return { app, rec, keyFor };
+  }
+
+  test('its vertical pull is derived as bodyweight, not defaulted to loaded', () => {
+    const { rec, keyFor } = seeded(legacyStore());
+    assert.equal(rec.primaries[keyFor('primaries', VERTICAL_PULL)].bw, true,
+      'the stored name is enough to say what the missing key meant');
+    // And the derivation is not a blanket yes: the barbell lift beside it has no
+    // flag to invent either, and still reads as loaded.
+    assert.equal(rec.primaries[keyFor('primaries', 'Conventional Deadlift')].bw, false,
+      'a loaded Movement stays loaded');
+    assert.equal(rec.score.total, 84, 'and reading leaves the stored Score alone');
+  });
+
+  test('one tap on an accessory RPE in the Edit Log does not collapse its Score', () => {
+    const { app, rec, keyFor } = seeded(legacyStore());
+    assert.equal(rec.score.total, 84, 'the Score the lifter finished this Session with');
+    const curl = keyFor('accessories', CORRECTED);
+    assert.equal(rec.accessories[curl].rpe, 5, 'the rating about to be corrected');
+
+    app.updateSessionRpe(rec.id, curl, 4);
+
+    const after = app.getAllSessions()[0];
+    assert.equal(after.score.primaryPct, 100,
+      'all three primary Movements are still logged in full, the reps-only one included');
+    assert.equal(after.score.total, 82,
+      'one step down on one of four accessories costs two points, and nothing else moves');
+    assert.notEqual(after.score.total, 71,
+      'invented as loaded, the three reps-only sets score zero and the Session loses thirteen');
+  });
+
+  test('the flag a Score rewrite bakes into storage is the derived one', () => {
+    const { app, rec, keyFor } = seeded(legacyStore());
+    app.updateSessionRpe(rec.id, keyFor('accessories', CORRECTED), 4);
+    const stored = JSON.parse(app.localStorage.getItem('apparatus_sessions'))[0];
+    const pull = Object.keys(stored.primaries).find(k => VERTICAL_PULL.test(stored.primaries[k].name));
+    assert.equal(stored.primaries[pull].bw, true,
+      'what a recompute writes back is permanent, so it had better be right');
+  });
+
+  test('the legacy record and one logged today agree about the same lift', () => {
+    // The third symptom, and the one that says the derivation matches what
+    // initSession stamps rather than merely being truthy: a fresh Session reads
+    // the flag off the Movement, a legacy record off the stored name, and the
+    // lifter is owed the same Score either way.
+    const before = loadAppWithProgram(PPL, LEGACY_BW), now = loadAppWithProgram(PPL);
+    const prescribes = app => app.DAYS.find(d => d.id === 'pull').sections
+      .map(sec => [app.classifySection(sec), sec.items.map(i => [i.name, i.sets])]);
+    assert.deepEqual(plain(prescribes(before)), plain(prescribes(now)),
+      'both builds prescribe this Day identically, so the comparison is like for like');
+
+    const legacy = seeded(legacyStore()), today = seeded(storeFrom(now));
+    assert.equal(legacy.rec.score.total, today.rec.score.total, 'the same work scores the same');
+    legacy.app.updateSessionRpe(legacy.rec.id, legacy.keyFor('accessories', CORRECTED), 4);
+    today.app.updateSessionRpe(today.rec.id, today.keyFor('accessories', CORRECTED), 4);
+    assert.equal(legacy.app.getAllSessions()[0].score.total,
+                 today.app.getAllSessions()[0].score.total,
+                 'and the same correction costs the same');
+  });
+
+  // A draft written by that build, saved its own way.
+  function legacyDraft() {
+    const old = loadAppWithProgram(PPL, LEGACY_BW);
+    old.session = logPullDay(old).s;
+    old.saveDraft();
+    const raw = old.localStorage.getItem('apparatus_draft');
+    assert.equal(/"bw"/.test(raw), false, 'nor does a draft from that build carry the flag');
+    return raw;
+  }
+
+  test('a draft from that build resumes with its vertical pull bodyweight', () => {
+    const app = loadAppWithProgram(PPL);
+    app.localStorage.setItem('apparatus_draft', legacyDraft());
+
+    const cleaned = app.loadDraft();
+    const key = Object.keys(cleaned.primaries).find(k => VERTICAL_PULL.test(cleaned.primaries[k].name));
+    assert.equal('bw' in cleaned.primaries[key], false,
+      'the validator hands the gap on rather than filling it, which is what lets the next step see it');
+
+    const resumed = app.backfillSnapshot(cleaned);
+    assert.equal(resumed.primaries[key].bw, true, 'so a resumed draft counts reps-only sets');
+    const fresh = app.initSession('pull').primaries[key];
+    assert.equal(resumed.primaries[key].bw, fresh.bw,
+      'and resuming agrees with starting the Day fresh about what it prescribes');
+  });
+
+  test('a draft is backfilled from its Day, so the Program\'s own flag is read', () => {
+    // The two paths are not the same derivation, deliberately. A draft still has
+    // the prescribed Movement in hand, so it can read a bodyweight flag the
+    // Program set on a Movement whose name gives nothing away. A finished record
+    // keeps no programId -- it is a statement of what happened, not of what was
+    // prescribed -- so there the stored name is all there is to go on. Prefer
+    // the Movement wherever it is in reach.
+    const app = loadApp();
+    const program = app.clone(loadAppWithProgram(PPL).PROGRAM);
+    const bar = program.days.find(d => d.id === 'pull').sections
+      .reduce((f, sec) => f || sec.items.find(i => i.name === 'Conventional Deadlift'), null);
+    assert.ok(bar, 'the fixture needs a Movement whose name says nothing about bodyweight');
+    bar.bodyweight = true;
+    app.setProgram(program);
+    app.localStorage.setItem('apparatus_draft', legacyDraft());
+
+    const resumed = app.backfillSnapshot(app.loadDraft());
+    const key = Object.keys(resumed.primaries).find(k => resumed.primaries[k].name === bar.name);
+    assert.equal(resumed.primaries[key].bw, true,
+      'the Program says this one is bodyweight, and on a draft the Day is in reach to say so');
+  });
+});
