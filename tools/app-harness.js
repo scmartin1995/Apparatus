@@ -28,6 +28,9 @@ const SCRIPT_OPEN = '<script>';
 const SCRIPT_CLOSE = '</script>';
 const WRAPPER = /^\s*\(function\(\)\s*\{\s*'use strict';\s*try\s*\{/;
 const INIT_MARKER = /^\/\/ ── INIT /m;
+// Where the app's own launch sequence ends: the outer try's catch, at the
+// start of a line. Only bootApp keeps the INIT section, and it cuts here.
+const WRAPPER_CATCH = /^\} catch\(err\) \{/m;
 
 function extractScript(html) {
   // More than one inline script is normal: a small bootstrap in <head> applies
@@ -59,7 +62,7 @@ function extractScript(html) {
   return app[0];
 }
 
-function unwrap(script) {
+function unwrap(script, keepInit) {
   const m = script.match(WRAPPER);
   if (!m) {
     throw new Error('app-harness: the script in index.html no longer opens with the expected IIFE + try wrapper');
@@ -71,7 +74,14 @@ function unwrap(script) {
   }
   // Everything from INIT onwards drives the DOM and the service worker. Tests
   // set up program state explicitly instead, via the returned setProgram.
-  return body.slice(0, init.index);
+  if (!keepInit) return body.slice(0, init.index);
+  // bootApp runs the launch sequence too, but not the catch that turns an
+  // error into a message on the page: a launch that throws must throw here.
+  const end = body.slice(init.index).match(WRAPPER_CATCH);
+  if (!end) {
+    throw new Error('app-harness: could not find the catch that closes the INIT section in index.html');
+  }
+  return body.slice(0, init.index + end.index);
 }
 
 // ── BROWSER STUBS ──────────────────────────────────────────
@@ -213,6 +223,9 @@ const EXPORTS = [
   'openProgPage', 'closeProgPage', 'closeSummary', 'switchDay',
   'showHistoryPage', 'openSessionSummary',
   'deleteSession', 'undoDeleteSession', 'finishUndo',
+  // window.-assigned, so they need naming: logging a round of an AR-7
+  // Movement, and choosing a Program on the Import page.
+  'toggleAr7Round', 'selectBuiltIn', 'useSavedProgram',
   'startSession', 'finishSession', 'discardSession', 'resumeSession',
   'BUILT_IN_PROGRAMS',
 ];
@@ -244,11 +257,24 @@ const EPILOGUE = [
 // tests. htmlPath loads some other copy of the app instead of the working one,
 // which is how a render is compared against a reference build.
 function loadApp(htmlPath) {
+  return load(htmlPath, false);
+}
+
+// Launches the app the way a browser does: the script runs to the end of its
+// INIT section, which picks the Program, restores the timer, renders, and
+// checks for a draft to resume. Storage starts empty, so this is a first
+// launch on a new device. Anything the launch throws is thrown from here,
+// rather than painted onto the page as the app's own catch would.
+function bootApp(htmlPath) {
+  return load(htmlPath, true);
+}
+
+function load(htmlPath, boot) {
   const html = fs.readFileSync(htmlPath || HTML, 'utf8');
   // The app asks before throwing away logged work. Tests drive both answers,
   // and can read back what the lifter would have been asked.
   const prompts = { answer: true, asked: [] };
-  const source = unwrap(extractScript(html)) + '\n' + EPILOGUE + '\n';
+  const source = unwrap(extractScript(html), boot) + '\n' + EPILOGUE + '\n';
 
   const localStorage = makeLocalStorage();
 
@@ -380,4 +406,4 @@ function findSection(app, cat, dayId) {
   return null;
 }
 
-module.exports = { loadApp, loadAppWithProgram, findSection, plain, ROOT, HTML };
+module.exports = { loadApp, bootApp, loadAppWithProgram, findSection, plain, ROOT, HTML };
