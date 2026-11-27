@@ -277,7 +277,6 @@ function load(htmlPath, boot) {
   const source = unwrap(extractScript(html), boot) + '\n' + EPILOGUE + '\n';
 
   const localStorage = makeLocalStorage();
-  const consoleErrors = [];
 
   // A clock that only ever goes forward, and does it in hour-long strides.
   //
@@ -327,11 +326,7 @@ function load(htmlPath, boot) {
     localStorage,
     navigator: { userAgent: 'node' },
     location: { href: 'http://localhost/', reload() { reloads++; } },
-    // Errors the app reports rather than throws are kept, so a test can say
-    // none happened. They still reach the real console.
-    console: Object.assign(Object.create(console), {
-      error(...args) { consoleErrors.push(args.map(String).join(' ')); console.error(...args); },
-    }),
+    console,
     setTimeout, clearTimeout, setInterval, clearInterval,
     performance: { now },
     requestAnimationFrame(fn) { return setTimeout(() => fn(now()), 0); },
@@ -368,7 +363,6 @@ function load(htmlPath, boot) {
   app.lastConfirm = () => prompts.asked[prompts.asked.length - 1] || null;
   app.downloads = () => downloads.slice();
   app.reloads = () => reloads;
-  app.consoleErrors = () => consoleErrors.slice();
   // A file the lifter picks, the way handleProgramFile receives one.
   app.fileOf = (name, text) => ({ name, size: text.length, harnessText: text });
   return app;
